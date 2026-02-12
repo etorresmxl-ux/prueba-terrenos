@@ -5,7 +5,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Inmobiliaria Pro v31", layout="wide")
+st.set_page_config(page_title="Inmobiliaria Pro v32", layout="wide")
 
 # --- SISTEMA DE SEGURIDAD ---
 def check_password():
@@ -83,33 +83,45 @@ if choice == "Resumen":
             f_contrato = datetime.strptime(row['Fecha de Contrato'], '%Y-%m-%d')
             total_pagado = row['Enganche'] + row['PagosExtra']
             
-            # Calcular meses transcurridos para ver estatus
+            # Calcular meses que deberían haber transcurrido
             diff = relativedelta(hoy, f_contrato)
             meses_transcurridos = diff.years * 12 + diff.months
-            # No puede exceder el plazo total del contrato
             meses_a_deber = min(meses_transcurridos, int(row['meses']))
             
-            monto_deberia_haber_pagado = meses_a_deber * row['mensualidad']
-            monto_real_pagado_mensualidades = row['PagosExtra']
+            monto_obligatorio = meses_a_deber * row['mensualidad']
+            monto_abonado = row['PagosExtra']
             
-            diferencia = monto_deberia_haber_pagado - monto_real_pagado_mensualidades
-            
-            estatus = "Al Corriente" if diferencia <= 1.0 else "Atrasado" # Margen de 1 peso por decimales
+            diferencia = monto_obligatorio - monto_abonado
             pago_corriente = max(0, diferencia)
+            
+            # Cálculo de Días de Atraso
+            dias_atraso = 0
+            if diferencia > 1.0:  # Si debe más de 1 peso (margen decimal)
+                # Calculamos cuántos meses de abono cubren los pagos actuales
+                meses_cubiertos = monto_abonado // row['mensualidad']
+                # La fecha en la que debió pagar el siguiente mes
+                fecha_vencimiento_pendiente = f_contrato + relativedelta(months=int(meses_cubiertos) + 1)
+                if hoy > fecha_vencimiento_pendiente:
+                    dias_atraso = (hoy - fecha_vencimiento_pendiente).days
+
+            estatus = "Al Corriente" if diferencia <= 1.0 else "Atrasado"
 
             resultados.append({
                 "Ubicación": row['Ubicación'],
                 "Cliente": row['Cliente'],
                 "Valor": f_money(row['Valor']),
                 "Enganche": f_money(row['Enganche']),
-                "Fecha de Contrato": f_date_show(row['Fecha de Contrato']),
+                "Contrato": f_date_show(row['Fecha de Contrato']),
                 "Total Pagado": f_money(total_pagado),
-                "Fecha Ultimo Pago": f_date_show(row['Fecha Ultimo Pago']) if row['Fecha Ultimo Pago'] else "Sin pagos",
+                "Último Pago": f_date_show(row['Fecha Ultimo Pago']) if row['Fecha Ultimo Pago'] else "N/A",
                 "Estatus": estatus,
-                "Pago para estar al Corriente": f_money(pago_corriente)
+                "Días Atraso": dias_atraso,
+                "Para Corriente": f_money(pago_corriente)
             })
         
-        st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
+        # Mostrar tabla con formato
+        res_df = pd.DataFrame(resultados)
+        st.dataframe(res_df, use_container_width=True, hide_index=True)
     else:
         st.info("No hay registros de ventas.")
 
