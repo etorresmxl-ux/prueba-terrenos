@@ -5,7 +5,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Inmobiliaria Pro v39", layout="wide")
+st.set_page_config(page_title="Inmobiliaria", layout="wide")
 
 # --- SEGURIDAD ---
 def check_password():
@@ -88,72 +88,72 @@ if choice == "Resumen":
             })
         st.dataframe(pd.DataFrame(resultados).style.apply(color_atraso, axis=1).format({"Valor": f_money, "Enganche": f_money, "Total Pagado": f_money, "Para Corriente": f_money}), use_container_width=True, hide_index=True)
 
-# --- PÁGINA: GESTIÓN DE PAGOS (EDITABLE) ---
+# --- PÁGINA: GESTIÓN DE PAGOS ---
 elif choice == "Gestión de Pagos":
     st.header("⚙️ Editor Maestro de Pagos")
-    st.info("Haz clic en cualquier celda de **Fecha** o **Monto** para editar. Marca **Eliminar** para borrar el registro.")
-
-    # Filtros
+    st.info("Haz clic en Fecha o Monto para editar. Marca Eliminar para borrar.")
     f1, f2 = st.columns(2)
-    f_cli = f1.text_input("Buscar Cliente:")
-    f_loc = f2.text_input("Buscar Ubicación:")
-
-    # Solo editaremos los ABONOS (los enganches se editan en Gestión de Contratos por ser parte del acuerdo inicial)
-    query = '''
-        SELECT p.id, p.fecha as Fecha, c.nombre as Cliente, 'M'||t.manzana||'-L'||t.lote as Ubicación, p.monto as Monto
-        FROM pagos p 
-        JOIN ventas v ON p.id_venta = v.id 
-        JOIN clientes c ON v.id_cliente = c.id 
-        JOIN terrenos t ON v.id_terreno = t.id
-    '''
+    f_cli, f_loc = f1.text_input("Buscar Cliente:"), f2.text_input("Buscar Ubicación:")
+    query = "SELECT p.id, p.fecha as Fecha, c.nombre as Cliente, 'M'||t.manzana||'-L'||t.lote as Ubicación, p.monto as Monto FROM pagos p JOIN ventas v ON p.id_venta = v.id JOIN clientes c ON v.id_cliente = c.id JOIN terrenos t ON v.id_terreno = t.id"
     df_p = pd.read_sql_query(query, conn)
-    
     if not df_p.empty:
-        # Aplicar filtros
         if f_cli: df_p = df_p[df_p['Cliente'].str.contains(f_cli, case=False)]
         if f_loc: df_p = df_p[df_p['Ubicación'].str.contains(f_loc, case=False)]
-        
-        # Añadir columna de control para eliminar
         df_p['Eliminar'] = False
-
-        # Configurar el editor
-        edited_df = st.data_editor(
-            df_p,
-            column_config={
-                "id": None, # Ocultar ID
-                "Fecha": st.column_config.TextColumn("Fecha (AAAA-MM-DD)"),
-                "Monto": st.column_config.NumberColumn("Importe ($)", format="$%.2f"),
-                "Cliente": st.column_config.TextColumn("Cliente", disabled=True),
-                "Ubicación": st.column_config.TextColumn("Ubicación", disabled=True),
-                "Eliminar": st.column_config.CheckboxColumn("Eliminar registro?")
-            },
-            hide_index=True,
-            use_container_width=True
-        )
-
-        if st.button("💾 Aplicar todos los cambios"):
-            # Identificar qué filas cambiaron
+        edited_df = st.data_editor(df_p, column_config={"id": None, "Fecha": st.column_config.TextColumn("Fecha (AAAA-MM-DD)"), "Monto": st.column_config.NumberColumn("Importe ($)", format="$%.2f"), "Cliente": st.column_config.TextColumn("Cliente", disabled=True), "Ubicación": st.column_config.TextColumn("Ubicación", disabled=True), "Eliminar": st.column_config.CheckboxColumn("Eliminar?")}, hide_index=True, use_container_width=True)
+        if st.button("💾 Aplicar Cambios"):
             for index, row in edited_df.iterrows():
-                original_row = df_p.iloc[index]
-                
-                # 1. Eliminar si se marcó el checkbox
-                if row['Eliminar']:
-                    c.execute("DELETE FROM pagos WHERE id = ?", (int(row['id']),))
-                
-                # 2. Actualizar si cambió la fecha o el monto
-                elif row['Fecha'] != original_row['Fecha'] or row['Monto'] != original_row['Monto']:
-                    try:
-                        # Validar formato fecha antes de guardar
+                orig = df_p.iloc[index]
+                if row['Eliminar']: c.execute("DELETE FROM pagos WHERE id = ?", (int(row['id']),))
+                elif row['Fecha'] != orig['Fecha'] or row['Monto'] != orig['Monto']:
+                    try: 
                         datetime.strptime(row['Fecha'], '%Y-%m-%d')
                         c.execute("UPDATE pagos SET fecha = ?, monto = ? WHERE id = ?", (row['Fecha'], row['Monto'], int(row['id'])))
-                    except ValueError:
-                        st.error(f"Error en formato de fecha para el registro de {row['Cliente']}. Usa AAAA-MM-DD")
-            
-            conn.commit()
-            st.success("¡Base de datos sincronizada!")
-            st.rerun()
-    else:
-        st.info("No hay abonos registrados para editar.")
+                    except: st.error(f"Fecha inválida en {row['Cliente']}")
+            conn.commit(); st.success("Sincronizado"); st.rerun()
+
+# --- PÁGINA: DETALLE DE CRÉDITO (CON MENSUALIDAD AGREGADA) ---
+elif choice == "Detalle de Crédito":
+    st.header("🔍 Estado de Cuenta Individual")
+    df_u = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote || ' - ' || c.nombre as info FROM ventas v JOIN terrenos t ON v.id_terreno = t.id JOIN clientes c ON v.id_cliente = c.id", conn)
+    if not df_u.empty:
+        sel_u = st.selectbox("Seleccione Contrato:", df_u['info'])
+        vid = int(df_u[df_u['info'] == sel_u]['id'].values[0])
+        res = pd.read_sql_query(f'''
+            SELECT v.*, c.nombre, 'M'||t.manzana||'-L'||t.lote as u, t.costo, 
+            IFNULL((SELECT SUM(monto) FROM pagos WHERE id_venta = v.id), 0) as total_abonos 
+            FROM ventas v JOIN clientes c ON v.id_cliente = c.id JOIN terrenos t ON v.id_terreno = t.id 
+            WHERE v.id = {vid}''', conn).iloc[0]
+        
+        # FILA DE MÉTRICAS (Datos Generales con Mensualidad)
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Ubicación", res['u'])
+        m1.metric("Valor Total", f_money(res['costo']))
+        
+        m2.metric("Cliente", res['nombre'])
+        m2.metric("Enganche", f_money(res['enganche']))
+        
+        m3.metric("Fecha Contrato", f_date_show(res['fecha']))
+        m3.metric("Mensualidad", f_money(res['mensualidad'])) # <--- NUEVO CAMPO
+        
+        m4.metric("Plazo", f"{int(res['meses'])} meses")
+        m4.metric("Total Pagado", f_money(res['enganche'] + res['total_abonos']))
+        
+        m5.metric("Saldo Pendiente", f_money(res['costo'] - (res['enganche'] + res['total_abonos'])))
+        
+        st.markdown("---")
+        # TABLA DE AMORTIZACIÓN
+        pagos_reales = pd.read_sql_query(f"SELECT monto, fecha FROM pagos WHERE id_venta = {vid} ORDER BY fecha ASC", conn)
+        tabla_amort = []; abonos_acum = res['total_abonos']; f_ini = datetime.strptime(res['fecha'], '%Y-%m-%d')
+        for i in range(1, int(res['meses']) + 1):
+            f_v = f_ini + relativedelta(months=i); cuota = res['mensualidad']
+            if abonos_acum >= cuota:
+                est, f_p, imp = "✅ Pagado", f_date_show(pagos_reales.iloc[i-1]['fecha']) if (i-1) < len(pagos_reales) else "Acumulado", f_money(cuota); abonos_acum -= cuota
+            elif abonos_acum > 0:
+                est, f_p, imp = "🟡 Parcial", "Pendiente", f_money(abonos_acum); abonos_acum = 0
+            else: est, f_p, imp = "🔴 Pendiente", "---", f_money(0)
+            tabla_amort.append({"Mes": i, "Vencimiento": f_date_show(f_v.strftime('%Y-%m-%d')), "Cuota": f_money(cuota), "Estatus": est, "Fecha Pago": f_p, "Pagado": imp})
+        st.dataframe(pd.DataFrame(tabla_amort), use_container_width=True, hide_index=True)
 
 # --- PÁGINA: NUEVA VENTA ---
 elif choice == "Nueva Venta":
@@ -161,7 +161,6 @@ elif choice == "Nueva Venta":
     lt = pd.read_sql_query("SELECT * FROM terrenos WHERE estatus='Disponible'", conn)
     c_list = ["+ Añadir nuevo..."] + sorted(pd.read_sql_query("SELECT nombre FROM clientes", conn)['nombre'].tolist())
     v_list = ["+ Añadir nuevo..."] + sorted(pd.read_sql_query("SELECT nombre FROM vendedores", conn)['nombre'].tolist())
-    
     if not lt.empty:
         with st.form("nv"):
             col1, col2 = st.columns(2)
@@ -170,13 +169,10 @@ elif choice == "Nueva Venta":
             c_new = col1.text_input("Nombre nuevo cliente:") if c_sel == "+ Añadir nuevo..." else ""
             v_sel = col1.selectbox("Vendedor:", v_list)
             v_new = col1.text_input("Nombre nuevo vendedor:") if v_sel == "+ Añadir nuevo..." else ""
-            
             p_cat = float(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['costo'].values[0])
-            costo = col2.number_input("Precio Final:", value=p_cat)
-            eng = col2.number_input("Enganche:")
-            plz = col2.number_input("Plazo (Meses):", value=48)
+            costo = col2.number_input("Precio Final:", value=p_cat); eng = col2.number_input("Enganche:"); plz = col2.number_input("Plazo (Meses):", value=48)
             f_v = col2.date_input("Fecha", datetime.now())
-            if st.form_submit_button("Registrar Venta"):
+            if st.form_submit_button("Registrar"):
                 final_c = c_new if c_sel == "+ Añadir nuevo..." else c_sel
                 final_v = v_new if v_sel == "+ Añadir nuevo..." else v_sel
                 if final_c and final_v:
@@ -198,32 +194,6 @@ elif choice == "Cobranza":
                 id_v = int(df_v[df_v['l'] == s]['id'].values[0])
                 c.execute("INSERT INTO pagos (id_venta, monto, fecha) VALUES (?,?,?)", (id_v, m, f_pago.strftime('%Y-%m-%d')))
                 conn.commit(); st.success("Registrado"); st.rerun()
-
-# --- PÁGINA: DETALLE DE CRÉDITO ---
-elif choice == "Detalle de Crédito":
-    st.header("🔍 Estado de Cuenta Individual")
-    df_u = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote || ' - ' || c.nombre as info FROM ventas v JOIN terrenos t ON v.id_terreno = t.id JOIN clientes c ON v.id_cliente = c.id", conn)
-    if not df_u.empty:
-        sel_u = st.selectbox("Seleccione Contrato:", df_u['info'])
-        vid = int(df_u[df_u['info'] == sel_u]['id'].values[0])
-        res = pd.read_sql_query(f"SELECT v.*, c.nombre, 'M'||t.manzana||'-L'||t.lote as u, t.costo, IFNULL((SELECT SUM(monto) FROM pagos WHERE id_venta = v.id), 0) as total_abonos FROM ventas v JOIN clientes c ON v.id_cliente = c.id JOIN terrenos t ON v.id_terreno = t.id WHERE v.id = {vid}", conn).iloc[0]
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Ubicación", res['u']); col1.metric("Valor Total", f_money(res['costo']))
-        col2.metric("Cliente", res['nombre']); col2.metric("Enganche", f_money(res['enganche']))
-        col3.metric("Fecha Contrato", f_date_show(res['fecha'])); col3.metric("Total Pagado", f_money(res['enganche'] + res['total_abonos']))
-        col4.metric("Saldo Pendiente", f_money(res['costo'] - (res['enganche'] + res['total_abonos'])))
-        st.markdown("---")
-        pagos_reales = pd.read_sql_query(f"SELECT monto, fecha FROM pagos WHERE id_venta = {vid} ORDER BY fecha ASC", conn)
-        tabla_amort = []; abonos_acum = res['total_abonos']; f_ini = datetime.strptime(res['fecha'], '%Y-%m-%d')
-        for i in range(1, int(res['meses']) + 1):
-            f_v = f_ini + relativedelta(months=i); cuota = res['mensualidad']
-            if abonos_acum >= cuota:
-                est, f_p, imp = "✅ Pagado", f_date_show(pagos_reales.iloc[i-1]['fecha']) if (i-1) < len(pagos_reales) else "Acumulado", f_money(cuota); abonos_acum -= cuota
-            elif abonos_acum > 0:
-                est, f_p, imp = "🟡 Parcial", "Pendiente", f_money(abonos_acum); abonos_acum = 0
-            else: est, f_p, imp = "🔴 Pendiente", "---", f_money(0)
-            tabla_amort.append({"Mes": i, "Vencimiento": f_date_show(f_v.strftime('%Y-%m-%d')), "Cuota": f_money(cuota), "Estatus": est, "Fecha Pago": f_p, "Pagado": imp})
-        st.dataframe(pd.DataFrame(tabla_amort), use_container_width=True, hide_index=True)
 
 # --- PÁGINA: GESTIÓN DE CONTRATOS ---
 elif choice == "Gestión de Contratos":
