@@ -4,7 +4,7 @@ import sqlite3
 from datetime import datetime
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Inmobiliaria Pro v23", layout="wide")
+st.set_page_config(page_title="Inmobiliaria Pro v24", layout="wide")
 
 # --- SISTEMA DE SEGURIDAD ---
 def check_password():
@@ -36,11 +36,22 @@ def f_date_show(fecha_str):
     except:
         return fecha_str
 
-# --- MENÚ LATERAL ESTRUCTURADO ---
+# --- LÓGICA DE AUTO-REGISTRO ---
+def get_or_create_id(tabla, nombre_col, valor):
+    """Busca un nombre, si no existe lo crea y devuelve el ID"""
+    valor = valor.strip()
+    c.execute(f"SELECT id FROM {tabla} WHERE {nombre_col} = ?", (valor,))
+    result = c.fetchone()
+    if result:
+        return result[0]
+    else:
+        c.execute(f"INSERT INTO {tabla} ({nombre_col}) VALUES (?)", (valor,))
+        conn.commit()
+        return c.lastrowid
+
+# --- MENÚ LATERAL ---
 with st.sidebar:
     st.title("📂 MENÚ PRINCIPAL")
-    
-    # Inicializar el estado de la navegación si no existe
     if 'menu_option' not in st.session_state:
         st.session_state.menu_option = "Resumen"
 
@@ -63,7 +74,7 @@ with st.sidebar:
 
 choice = st.session_state.menu_option
 
-# --- LÓGICA DE PÁGINAS ---
+# --- PÁGINAS ---
 
 if choice == "Resumen":
     st.header("📋 ESTADO DE CUENTA GENERAL")
@@ -82,6 +93,55 @@ if choice == "Resumen":
         st.dataframe(df[['Lote', 'Cliente', 'Valor Venta', 'Enganche', 'Contrato', 'Total Pagado', 'Saldo Hoy']], use_container_width=True, hide_index=True)
     else:
         st.info("No hay ventas registradas.")
+
+elif choice == "Nueva Venta":
+    st.header("📝 REGISTRAR NUEVO CONTRATO")
+    lt = pd.read_sql_query("SELECT * FROM terrenos WHERE estatus='Disponible'", conn)
+    if lt.empty: 
+        st.warning("No hay terrenos disponibles en el catálogo de Ubicaciones.")
+    else:
+        # Sugerencias para el usuario (opcional, ayuda a no repetir nombres mal escritos)
+        cli_list = pd.read_sql_query("SELECT nombre FROM clientes", conn)['nombre'].tolist()
+        ven_list = pd.read_sql_query("SELECT nombre FROM vendedores", conn)['nombre'].tolist()
+
+        with st.form("nv"):
+            col1, col2 = st.columns(2)
+            l_sel = col1.selectbox("Lote Disponible:", lt['manzana'] + "-" + lt['lote'])
+            
+            # Usamos text_input para permitir nombres nuevos
+            c_nombre = col1.text_input("Nombre del Cliente:", help="Si no existe, se creará automáticamente")
+            v_nombre = col1.text_input("Nombre del Vendedor:", help="Si no existe, se creará automáticamente")
+            
+            f_cont = col1.date_input("Fecha de Contrato", datetime.now())
+            
+            p_cat = float(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['costo'].values[0])
+            costo_v = col2.number_input("Valor de Venta Real ($)", min_value=0.0, value=p_cat, format="%.2f")
+            eng_v = col2.number_input("Enganche Recibido ($)", min_value=0.0, format="%.2f")
+            plz_v = col2.number_input("Plazo (Meses)", min_value=1, value=48)
+            com_v = col2.number_input("Comisión del Vendedor ($)", min_value=0.0, format="%.2f")
+            
+            if st.form_submit_button("CERRAR VENTA"):
+                if not c_nombre or not v_nombre:
+                    st.error("Por favor escribe el nombre del cliente y del vendedor.")
+                else:
+                    # 1. Obtener o crear IDs
+                    id_c = get_or_create_id('clientes', 'nombre', c_nombre)
+                    id_v = get_or_create_id('vendedores', 'nombre', v_nombre)
+                    id_l = int(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['id'].values[0])
+                    
+                    # 2. Calcular mensualidad
+                    mensu = (costo_v - eng_v) / plz_v
+                    
+                    # 3. Insertar Venta
+                    c.execute('''INSERT INTO ventas (id_terreno, id_cliente, id_vendedor, enganche, meses, mensualidad, fecha, comision_total) 
+                                 VALUES (?,?,?,?,?,?,?,?)''', 
+                              (id_l, id_c, id_v, eng_v, plz_v, mensu, f_cont.strftime('%Y-%m-%d'), com_v))
+                    
+                    # 4. Actualizar Terreno
+                    c.execute("UPDATE terrenos SET estatus='Vendido', costo=? WHERE id=?", (costo_v, id_l))
+                    conn.commit()
+                    st.success(f"¡Venta registrada! Cliente '{c_nombre}' y Vendedor '{v_nombre}' gestionados correctamente.")
+                    st.rerun()
 
 elif choice == "Comisiones":
     st.header("🤝 REPORTE DE COMISIONES")
@@ -105,31 +165,6 @@ elif choice == "Comisiones":
                 id_v = int(df_c[df_c['Lote'] + " (" + df_c['Vendedor'] + ")" == sel]['id'].values[0])
                 c.execute("INSERT INTO pagos_comisiones (id_venta, monto_pagado, fecha) VALUES (?,?,?)", (id_v, monto_p, datetime.now().strftime('%Y-%m-%d')))
                 conn.commit(); st.rerun()
-
-elif choice == "Nueva Venta":
-    st.header("📝 REGISTRAR NUEVO CONTRATO")
-    lt = pd.read_sql_query("SELECT * FROM terrenos WHERE estatus='Disponible'", conn)
-    cl = pd.read_sql_query("SELECT * FROM clientes", conn)
-    vn = pd.read_sql_query("SELECT * FROM vendedores", conn)
-    if lt.empty: st.warning("No hay terrenos disponibles.")
-    else:
-        with st.form("nv"):
-            col1, col2 = st.columns(2)
-            l_sel = col1.selectbox("Lote:", lt['manzana'] + "-" + lt['lote'])
-            c_sel = col1.selectbox("Cliente:", cl['nombre'])
-            v_sel = col1.selectbox("Vendedor:", vn['nombre'])
-            f_cont = col1.date_input("Fecha de Contrato", datetime.now())
-            p_cat = float(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['costo'].values[0])
-            costo_v = col2.number_input("Valor de Venta Real ($)", min_value=0.0, value=p_cat, format="%.2f")
-            eng_v = col2.number_input("Enganche Recibido ($)", min_value=0.0, format="%.2f")
-            plz_v = col2.number_input("Plazo (Meses)", min_value=1, value=48)
-            com_v = col2.number_input("Comisión del Vendedor ($)", min_value=0.0, format="%.2f")
-            if st.form_submit_button("CERRAR VENTA"):
-                id_l = int(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['id'].values[0]); id_c = int(cl[cl['nombre'] == c_sel]['id'].values[0]); id_v = int(vn[vn['nombre'] == v_sel]['id'].values[0])
-                mensu = (costo_v - eng_v) / plz_v
-                c.execute('''INSERT INTO ventas (id_terreno, id_cliente, id_vendedor, enganche, meses, mensualidad, fecha, comision_total) VALUES (?,?,?,?,?,?,?,?)''', (id_l, id_c, id_v, eng_v, plz_v, mensu, f_cont.strftime('%Y-%m-%d'), com_v))
-                c.execute("UPDATE terrenos SET estatus='Vendido', costo=? WHERE id=?", (costo_v, id_l))
-                conn.commit(); st.success("Venta realizada"); st.rerun()
 
 elif choice == "Cobranza":
     st.header("💸 RECIBIR ABONOS")
@@ -179,11 +214,11 @@ elif choice == "Directorio":
     st.header("👥 DIRECTORIO")
     c1, c2 = st.columns(2)
     with c1:
-        n_c = st.text_input("Nuevo Cliente")
-        if st.button("Registrar Cliente"): c.execute("INSERT INTO clientes (nombre) VALUES (?)", (n_c,)); conn.commit(); st.rerun()
+        st.subheader("Clientes")
+        st.dataframe(pd.read_sql_query("SELECT id, nombre FROM clientes ORDER BY nombre", conn), hide_index=True)
     with c2:
-        n_v = st.text_input("Nuevo Vendedor")
-        if st.button("Registrar Vendedor"): c.execute("INSERT INTO vendedores (nombre) VALUES (?)", (n_v,)); conn.commit(); st.rerun()
+        st.subheader("Vendedores")
+        st.dataframe(pd.read_sql_query("SELECT id, nombre FROM vendedores ORDER BY nombre", conn), hide_index=True)
 
 elif choice == "Gráficos":
     st.header("📈 GRÁFICOS DE VENTAS")
