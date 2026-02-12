@@ -59,7 +59,6 @@ with col_t2:
 st.sidebar.title("📑 NAVEGACIÓN")
 menu = ["🏠 Resumen de Cartera", "🔍 Detalle por Lote", "💸 Cobranza", "📈 Gestión de Ventas", "📝 Nueva Venta", "🏗️ Catálogo Terrenos", "👥 Clientes/Vendedores"]
 
-# Si hay un lote seleccionado por clic, forzamos la pestaña de Detalle
 if st.session_state['lote_seleccionado']:
     default_index = 1
 else:
@@ -67,7 +66,7 @@ else:
 
 choice = st.sidebar.radio("Seleccione una opción:", menu, index=default_index)
 
-# --- 1. RESUMEN DE CARTERA (CON SELECCIÓN) ---
+# --- 1. RESUMEN DE CARTERA ---
 if choice == "🏠 Resumen de Cartera":
     st.header("📋 ESTADO DE CUENTA GENERAL")
     st.info("💡 Haz clic en cualquier fila para abrir el detalle de ese lote automáticamente.")
@@ -89,9 +88,17 @@ if choice == "🏠 Resumen de Cartera":
             total_pagado = (r['enganche'] or 0) + (r['suma_pagos'] or 0)
             saldo_hoy = (r['costo_total'] or 0) - total_pagado
             f_con = datetime.strptime(r['fecha_contrato'], '%Y-%m-%d')
+            
+            # Cálculo de meses que deberían estar pagados
             m_deb = ((hoy_dt.year - f_con.year) * 12 + (hoy_dt.month - f_con.month)) - (1 if hoy_dt.day < f_con.day else 0)
             atr_m = max(0, (m_deb * (r['mensualidad'] or 0)) - (r['suma_pagos'] or 0))
-            d_atr = (hoy_dt - (datetime.strptime(r['ultimo_pago_f'], '%Y-%m-%d') if r['ultimo_pago_f'] else f_con) - pd.DateOffset(months=1)).days if atr_m > 10 else 0
+            
+            # CORRECCIÓN DEL ERROR DE FECHA
+            d_atr = 0
+            if atr_m > 10:
+                ref_str = r['ultimo_pago_f'] if r['ultimo_pago_f'] else r['fecha_contrato']
+                ref_dt = datetime.strptime(ref_str, '%Y-%m-%d')
+                d_atr = (hoy_dt - ref_dt).days - 30 # Aproximación de días después del último mes pagado
             
             res.append({
                 "Ubicación": r['ubicacion'], "Cliente": r['cliente'], "Costo": f_money(r['costo_total']),
@@ -101,16 +108,8 @@ if choice == "🏠 Resumen de Cartera":
             })
 
         df_final = pd.DataFrame(res)
-        # Widget interactivo
-        seleccion = st.dataframe(
-            df_final, 
-            use_container_width=True, 
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single_row"
-        )
+        seleccion = st.dataframe(df_final, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single_row")
 
-        # Si selecciona una fila, guarda el lote y recarga
         if len(seleccion.selection.rows) > 0:
             idx = seleccion.selection.rows[0]
             st.session_state['lote_seleccionado'] = df_final.iloc[idx]['Ubicación']
@@ -119,7 +118,6 @@ if choice == "🏠 Resumen de Cartera":
 # --- 2. DETALLE POR LOTE ---
 elif choice == "🔍 Detalle por Lote":
     st.header("🔍 ESTADO DE CUENTA DETALLADO")
-    
     df_u = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote as u FROM ventas v JOIN terrenos t ON v.id_terreno = t.id", conn)
     
     if df_u.empty:
@@ -140,21 +138,23 @@ elif choice == "🔍 Detalle por Lote":
         d = pd.read_sql_query(q, conn).iloc[0]
         pagos_suma = pd.read_sql_query(f"SELECT SUM(monto) as s FROM pagos WHERE id_venta = {id_v}", conn)['s'].iloc[0] or 0
         
-        # Métricas
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Cliente", d['nombre'])
         c2.metric("Valor Terreno", f_money(d['costo']))
         c3.metric("Pagado Total", f_money(d['enganche'] + pagos_suma))
         c4.metric("Saldo Pendiente", f_money(d['costo'] - (d['enganche'] + pagos_suma)))
 
-        # Tabla Amortización
         st.subheader("📅 Plan de Pagos")
         tabla = []
         saldo_i = d['costo'] - d['enganche']
         f_pago = datetime.strptime(d['fecha'], '%Y-%m-%d')
         acum = pagos_suma
         for i in range(1, int(d['meses']) + 1):
-            f_pago += pd.DateOffset(months=1)
+            # Usamos un método de suma de meses más simple para evitar el error anterior
+            nueva_mes = (f_pago.month % 12) + 1
+            nueva_year = f_pago.year + (1 if f_pago.month == 12 else 0)
+            f_pago = f_pago.replace(month=nueva_mes, year=nueva_year)
+            
             pago_mes = min(d['mensualidad'], acum)
             acum -= pago_mes
             saldo_i -= pago_mes
@@ -166,7 +166,7 @@ elif choice == "🔍 Detalle por Lote":
             })
         st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True)
 
-# --- 3. COBRANZA ---
+# (Siguen las demás secciones igual: Cobranza, Nueva Venta, etc.)
 elif choice == "💸 Cobranza":
     st.header("💰 REGISTRO DE ABONOS")
     df_v = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote || ' (' || c.nombre || ')' as label FROM ventas v JOIN terrenos t ON v.id_terreno = t.id JOIN clientes c ON v.id_cliente = c.id", conn)
@@ -178,21 +178,19 @@ elif choice == "💸 Cobranza":
             if st.form_submit_button("REGISTRAR"):
                 id_v = int(df_v[df_v['label'] == sel]['id'].values[0])
                 c.execute("INSERT INTO pagos (id_venta, monto, fecha) VALUES (?,?,?)", (id_v, monto, fecha.strftime('%Y-%m-%d')))
-                conn.commit(); st.success("Pago registrado con éxito"); st.rerun()
+                conn.commit(); st.success("Pago registrado"); st.rerun()
 
-# --- 4. GESTIÓN DE VENTAS ---
 elif choice == "📈 Gestión de Ventas":
     st.header("📈 ADMINISTRAR VENTAS")
     df_g = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote as u, c.nombre, v.id_terreno FROM ventas v JOIN clientes c ON v.id_cliente = c.id JOIN terrenos t ON v.id_terreno = t.id", conn)
     if not df_g.empty:
         sel = st.selectbox("Venta a cancelar:", df_g['u'] + " - " + df_g['nombre'])
-        if st.button("⚠️ CANCELAR VENTA Y LIBERAR LOTE"):
+        if st.button("⚠️ CANCELAR VENTA"):
             row = df_g[df_g['u'] + " - " + df_g['nombre'] == sel].iloc[0]
             c.execute("DELETE FROM ventas WHERE id=?", (int(row['id']),))
             c.execute("UPDATE terrenos SET estatus='Disponible' WHERE id=?", (int(row['id_terreno']),))
             conn.commit(); st.rerun()
 
-# --- 5. NUEVA VENTA ---
 elif choice == "📝 Nueva Venta":
     st.header("📝 REGISTRAR VENTA")
     lt = pd.read_sql_query("SELECT * FROM terrenos WHERE estatus='Disponible'", conn)
@@ -217,7 +215,6 @@ elif choice == "📝 Nueva Venta":
                 c.execute("UPDATE terrenos SET estatus='Vendido' WHERE id=?", (id_l,))
                 conn.commit(); st.rerun()
 
-# --- 6. CATÁLOGO TERRENOS ---
 elif choice == "🏗️ Catálogo Terrenos":
     st.header("🏗️ CATÁLOGO")
     with st.form("f_t"):
@@ -230,21 +227,20 @@ elif choice == "🏗️ Catálogo Terrenos":
             conn.commit(); st.rerun()
     st.dataframe(pd.read_sql_query("SELECT * FROM terrenos", conn), use_container_width=True, hide_index=True)
 
-# --- 7. CLIENTES/VENDEDORES ---
 elif choice == "👥 Clientes/Vendedores":
     st.header("👥 REGISTROS")
     col1, col2 = st.columns(2)
     with col1:
         with st.form("f_c"):
             nom = st.text_input("Nuevo Cliente")
-            if st.form_submit_button("Registrar"):
+            if st.form_submit_button("Registrar Cliente"):
                 c.execute("INSERT INTO clientes (nombre) VALUES (?)", (nom,))
                 conn.commit(); st.rerun()
         st.write(pd.read_sql_query("SELECT nombre FROM clientes", conn))
     with col2:
         with st.form("f_v"):
             nom = st.text_input("Nuevo Vendedor")
-            if st.form_submit_button("Registrar"):
+            if st.form_submit_button("Registrar Vendedor"):
                 c.execute("INSERT INTO vendedores (nombre) VALUES (?)", (nom,))
                 conn.commit(); st.rerun()
         st.write(pd.read_sql_query("SELECT nombre FROM vendedores", conn))
