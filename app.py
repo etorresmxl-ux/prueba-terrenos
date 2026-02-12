@@ -44,6 +44,15 @@ def get_or_create_id(tabla, nombre_col, valor):
     conn.commit()
     return c.lastrowid
 
+# --- FUNCIÓN DE ESTILO PARA EL RESUMEN ---
+def color_atraso(row):
+    dias = row['Días Atraso']
+    if dias > 90:
+        return ['background-color: #D35400; color: white'] * len(row)
+    elif dias > 30:
+        return ['background-color: #F4D03F; color: black'] * len(row)
+    return [''] * len(row)
+
 # --- MENÚ LATERAL ---
 with st.sidebar:
     st.title("📂 Menú Principal")
@@ -63,16 +72,18 @@ if choice == "Resumen":
         (SELECT MAX(fecha) FROM pagos WHERE id_venta = v.id) as [Fecha Ultimo Pago]
         FROM ventas v JOIN clientes c ON v.id_cliente = c.id JOIN terrenos t ON v.id_terreno = t.id
     '''
-    df = pd.read_sql_query(query, conn)
-    if not df.empty:
+    df_raw = pd.read_sql_query(query, conn)
+    
+    if not df_raw.empty:
         hoy = datetime.now()
         resultados = []
-        for _, row in df.iterrows():
+        for _, row in df_raw.iterrows():
             f_contrato = datetime.strptime(row['Fecha de Contrato'], '%Y-%m-%d')
             total_pagado = row['Enganche'] + row['PagosExtra']
             diff = relativedelta(hoy, f_contrato)
             meses_transcurridos = min(diff.years * 12 + diff.months, int(row['meses']))
-            diferencia = (meses_transcurridos * row['mensualidad']) - row['PagosExtra']
+            monto_obligatorio = meses_transcurridos * row['mensualidad']
+            diferencia = monto_obligatorio - row['PagosExtra']
             
             dias_atraso = 0
             if diferencia > 1.0:
@@ -81,82 +92,24 @@ if choice == "Resumen":
                 if hoy > f_vencimiento: dias_atraso = (hoy - f_vencimiento).days
 
             resultados.append({
-                "Ubicación": row['Ubicación'], "Cliente": row['Cliente'], "Valor": f_money(row['Valor']),
-                "Enganche": f_money(row['Enganche']), "Contrato": f_date_show(row['Fecha de Contrato']),
-                "Total Pagado": f_money(total_pagado), "Último Pago": f_date_show(row['Fecha Ultimo Pago']) if row['Fecha Ultimo Pago'] else "N/A",
-                "Estatus": "Al Corriente" if diferencia <= 1.0 else "Atrasado", "Días Atraso": dias_atraso, "Para Corriente": f_money(max(0, diferencia))
+                "Ubicación": row['Ubicación'], "Cliente": row['Cliente'], "Valor": row['Valor'],
+                "Enganche": row['Enganche'], "Contrato": f_date_show(row['Fecha de Contrato']),
+                "Total Pagado": total_pagado, "Último Pago": f_date_show(row['Fecha Ultimo Pago']) if row['Fecha Ultimo Pago'] else "N/A",
+                "Estatus": "Al Corriente" if diferencia <= 1.0 else "Atrasado", 
+                "Días Atraso": dias_atraso, "Para Corriente": max(0, diferencia)
             })
-        st.dataframe(pd.DataFrame(resultados), use_container_width=True, hide_index=True)
-
-elif choice == "Nueva Venta":
-    st.header("📝 Registro de Nueva Venta")
-    lt = pd.read_sql_query("SELECT * FROM terrenos WHERE estatus='Disponible'", conn)
-    if not lt.empty:
-        with st.form("nv"):
-            c1, c2 = st.columns(2)
-            l_sel = c1.selectbox("Lote:", lt['manzana'] + "-" + lt['lote'])
-            c_nom = c1.text_input("Nombre del Cliente:")
-            v_nom = c1.text_input("Nombre del Vendedor:")
-            p_cat = float(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['costo'].values[0])
-            costo = c2.number_input("Precio Final ($):", value=p_cat)
-            eng = c2.number_input("Enganche ($):")
-            plz = c2.number_input("Plazo (Meses):", value=48)
-            f_cont = c1.date_input("Fecha de Contrato", datetime.now())
-            com_t = c2.number_input("Comisión Total ($):", value=0.0)
-            
-            if st.form_submit_button("Registrar Venta"):
-                if c_nom and v_nom:
-                    id_c = get_or_create_id('clientes', 'nombre', c_nom)
-                    id_v = get_or_create_id('vendedores', 'nombre', v_nom)
-                    id_l = int(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['id'].values[0])
-                    m = (costo - eng) / plz
-                    c.execute('''INSERT INTO ventas (id_terreno, id_cliente, id_vendedor, enganche, meses, mensualidad, fecha, comision_total) 
-                                 VALUES (?,?,?,?,?,?,?,?)''', (id_l, id_c, id_v, eng, plz, m, f_cont.strftime('%Y-%m-%d'), com_t))
-                    c.execute("UPDATE terrenos SET estatus='Vendido', costo=? WHERE id=?", (costo, id_l))
-                    conn.commit()
-                    st.success("¡Venta registrada con éxito!")
-                    st.rerun()
-
-elif choice == "Gestión de Contratos":
-    st.header("⚙️ Gestión y Edición de Contratos")
-    df_g = pd.read_sql_query('''
-        SELECT v.id, 'M'||t.manzana||'-L'||t.lote as u, c.nombre as cli, vn.nombre as vend, 
-        t.costo, v.enganche, v.meses, v.fecha, v.comision_total, v.id_terreno 
-        FROM ventas v 
-        JOIN clientes c ON v.id_cliente = c.id 
-        JOIN vendedores vn ON v.id_vendedor = vn.id 
-        JOIN terrenos t ON v.id_terreno = t.id''', conn)
-    
-    if not df_g.empty:
-        sel = st.selectbox("Contrato a editar:", df_g['u'] + " - " + df_g['cli'])
-        datos = df_g[df_g['u'] + " - " + df_g['cli'] == sel].iloc[0]
         
-        with st.form("edit_contrato"):
-            c1, c2 = st.columns(2)
-            nc = c1.text_input("Nombre Cliente", value=datos['cli'])
-            nv = c1.text_input("Nombre Vendedor", value=datos['vend'])
-            nf = c1.date_input("Fecha Contrato", value=datetime.strptime(datos['fecha'], '%Y-%m-%d'))
-            ncos = c2.number_input("Valor Venta ($)", value=float(datos['costo']))
-            neng = c2.number_input("Enganche ($)", value=float(datos['enganche']))
-            npla = c2.number_input("Plazo (Meses)", value=int(datos['meses']))
-            ncom = c2.number_input("Comisión Total ($)", value=float(datos['comision_total']))
-            
-            if st.form_submit_button("Guardar Cambios"):
-                id_c = get_or_create_id('clientes', 'nombre', nc)
-                id_v = get_or_create_id('vendedores', 'nombre', nv)
-                m = (ncos - neng) / npla
-                c.execute('''UPDATE ventas SET id_cliente=?, id_vendedor=?, enganche=?, meses=?, mensualidad=?, fecha=?, comision_total=? 
-                             WHERE id=?''', (id_c, id_v, neng, npla, m, nf.strftime('%Y-%m-%d'), ncom, int(datos['id'])))
-                c.execute("UPDATE terrenos SET costo=? WHERE id=?", (ncos, int(datos['id_terreno'])))
-                conn.commit()
-                st.success("Contrato actualizado.")
-                st.rerun()
+        df_final = pd.DataFrame(resultados)
         
-        if st.button("🗑️ Eliminar este Contrato"):
-            c.execute("DELETE FROM ventas WHERE id=?", (int(datos['id']),))
-            c.execute("UPDATE terrenos SET estatus='Disponible' WHERE id=?", (int(datos['id_terreno']),))
-            conn.commit()
-            st.rerun()
+        # Aplicar estilos y formatear monedas (el formateo se hace después del estilo para no perder el tipo numérico en el cálculo)
+        styled_df = df_final.style.apply(color_atraso, axis=1).format({
+            "Valor": f_money, "Enganche": f_money, "Total Pagado": f_money, "Para Corriente": f_money
+        })
+        
+        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+        st.caption("💡 Amarillo > 30 días | Naranja > 90 días")
+    else:
+        st.info("No hay registros de ventas.")
 
 elif choice == "Detalle de Crédito":
     st.header("🔍 Estado de Cuenta Individual")
@@ -195,24 +148,68 @@ elif choice == "Detalle de Crédito":
             tabla_amort.append({"Mes": i, "Vencimiento": f_date_show(f_venc.strftime('%Y-%m-%d')), "Importe Mes": f_money(cuota), "Estatus": estatus, "Fecha de Pago": f_p_real, "Monto Pagado": imp_p})
         st.dataframe(pd.DataFrame(tabla_amort), use_container_width=True, hide_index=True)
 
+elif choice == "Nueva Venta":
+    st.header("📝 Registro de Nueva Venta")
+    lt = pd.read_sql_query("SELECT * FROM terrenos WHERE estatus='Disponible'", conn)
+    if not lt.empty:
+        with st.form("nv"):
+            c1, c2 = st.columns(2)
+            l_sel = c1.selectbox("Lote:", lt['manzana'] + "-" + lt['lote'])
+            c_nom = c1.text_input("Nombre del Cliente:")
+            v_nom = c1.text_input("Nombre del Vendedor:")
+            p_cat = float(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['costo'].values[0])
+            costo = c2.number_input("Precio Final ($):", value=p_cat)
+            eng = c2.number_input("Enganche ($):")
+            plz = c2.number_input("Plazo (Meses):", value=48)
+            f_cont = c1.date_input("Fecha de Contrato", datetime.now())
+            com_t = c2.number_input("Comisión Total ($):", value=0.0)
+            if st.form_submit_button("Registrar Venta"):
+                if c_nom and v_nom:
+                    id_c = get_or_create_id('clientes', 'nombre', c_nom)
+                    id_v = get_or_create_id('vendedores', 'nombre', v_nom)
+                    id_l = int(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['id'].values[0])
+                    m = (costo - eng) / plz
+                    c.execute("INSERT INTO ventas (id_terreno, id_cliente, id_vendedor, enganche, meses, mensualidad, fecha, comision_total) VALUES (?,?,?,?,?,?,?,?)", (id_l, id_c, id_v, eng, plz, m, f_cont.strftime('%Y-%m-%d'), com_t))
+                    c.execute("UPDATE terrenos SET estatus='Vendido', costo=? WHERE id=?", (costo, id_l))
+                    conn.commit(); st.rerun()
+
+elif choice == "Gestión de Contratos":
+    st.header("⚙️ Edición de Contratos")
+    df_g = pd.read_sql_query('''SELECT v.id, 'M'||t.manzana||'-L'||t.lote as u, c.nombre as cli, vn.nombre as vend, t.costo, v.enganche, v.meses, v.fecha, v.comision_total, v.id_terreno FROM ventas v JOIN clientes c ON v.id_cliente = c.id JOIN vendedores vn ON v.id_vendedor = vn.id JOIN terrenos t ON v.id_terreno = t.id''', conn)
+    if not df_g.empty:
+        sel = st.selectbox("Contrato:", df_g['u'] + " - " + df_g['cli'])
+        datos = df_g[df_g['u'] + " - " + df_g['cli'] == sel].iloc[0]
+        with st.form("edit"):
+            c1, c2 = st.columns(2)
+            nc = c1.text_input("Cliente", value=datos['cli']); nv = c1.text_input("Vendedor", value=datos['vend'])
+            nf = c1.date_input("Fecha", value=datetime.strptime(datos['fecha'], '%Y-%m-%d'))
+            ncos = c2.number_input("Valor", value=float(datos['costo'])); neng = c2.number_input("Enganche", value=float(datos['enganche']))
+            npla = c2.number_input("Plazo", value=int(datos['meses'])); ncom = c2.number_input("Comisión", value=float(datos['comision_total']))
+            if st.form_submit_button("Actualizar"):
+                id_c = get_or_create_id('clientes', 'nombre', nc); id_v = get_or_create_id('vendedores', 'nombre', nv)
+                m = (ncos - neng) / npla
+                c.execute("UPDATE ventas SET id_cliente=?, id_vendedor=?, enganche=?, meses=?, mensualidad=?, fecha=?, comision_total=? WHERE id=?", (id_c, id_v, neng, npla, m, nf.strftime('%Y-%m-%d'), ncom, int(datos['id'])))
+                c.execute("UPDATE terrenos SET costo=? WHERE id=?", (ncos, int(datos['id_terreno'])))
+                conn.commit(); st.rerun()
+        if st.button("Eliminar Contrato"):
+            c.execute("DELETE FROM ventas WHERE id=?", (int(datos['id']),)); c.execute("UPDATE terrenos SET estatus='Disponible' WHERE id=?", (int(datos['id_terreno']),))
+            conn.commit(); st.rerun()
+
 elif choice == "Cobranza":
-    st.header("💸 Registro de Cobranza")
+    st.header("💸 Cobranza")
     df_v = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote || ' - ' || c.nombre as l FROM ventas v JOIN terrenos t ON v.id_terreno = t.id JOIN clientes c ON v.id_cliente = c.id", conn)
     if not df_v.empty:
         with st.form("pago"):
-            s = st.selectbox("Contrato:", df_v['l'])
-            m = st.number_input("Monto del Abono ($):", format="%.2f")
-            f_pago = st.date_input("Fecha de Pago", datetime.now())
-            if st.form_submit_button("Confirmar Pago"):
+            s = st.selectbox("Contrato:", df_v['l']); m = st.number_input("Monto:", format="%.2f"); f_pago = st.date_input("Fecha", datetime.now())
+            if st.form_submit_button("Confirmar"):
                 id_v = int(df_v[df_v['l'] == s]['id'].values[0])
                 c.execute("INSERT INTO pagos (id_venta, monto, fecha) VALUES (?,?,?)", (id_v, m, f_pago.strftime('%Y-%m-%d')))
-                conn.commit(); st.success("Pago registrado"); st.rerun()
+                conn.commit(); st.rerun()
 
 elif choice == "Ubicaciones":
-    st.header("📍 Catálogo de Ubicaciones")
+    st.header("📍 Ubicaciones")
     with st.form("cat"):
-        m, l, p = st.columns(3)
-        ma = m.text_input("Manzana"); lo = l.text_input("Lote"); pr = p.number_input("Precio ($)")
+        m, l, p = st.columns(3); ma = m.text_input("Manzana"); lo = l.text_input("Lote"); pr = p.number_input("Precio ($)")
         if st.form_submit_button("Añadir"):
             c.execute("INSERT INTO terrenos (manzana, lote, costo) VALUES (?,?,?)", (ma, lo, pr)); conn.commit(); st.rerun()
     st.dataframe(pd.read_sql_query("SELECT manzana, lote, costo, estatus FROM terrenos", conn), use_container_width=True, hide_index=True)
@@ -224,7 +221,7 @@ elif choice == "Directorio":
     c2.subheader("Vendedores"); c2.dataframe(pd.read_sql_query("SELECT nombre FROM vendedores ORDER BY nombre", conn), hide_index=True, use_container_width=True)
 
 elif choice == "Comisiones":
-    st.header("🤝 Reporte de Comisiones")
+    st.header("🤝 Comisiones")
     st.dataframe(pd.read_sql_query("SELECT vn.nombre as Vendedor, 'M'||t.manzana||'-L'||t.lote as Lote, v.comision_total as Total FROM ventas v JOIN terrenos t ON v.id_terreno = t.id JOIN vendedores vn ON v.id_vendedor = vn.id", conn), use_container_width=True, hide_index=True)
 
 elif choice == "Gráficos":
