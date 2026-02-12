@@ -4,15 +4,74 @@ import sqlite3
 from datetime import datetime
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Inmobiliaria Pro v26", layout="wide")
+st.set_page_config(page_title="Inmobiliaria Premium Dash v28", layout="wide")
 
-# --- ESTILO CSS PERSONALIZADO ---
+# --- ESTILO CSS AVANZADO (DISEÑO DARK DASHBOARD) ---
 st.markdown("""
     <style>
+    /* Fondo principal y fuentes */
+    [data-testid="stAppViewContainer"] {
+        background-color: #12141d;
+        font-family: 'Inter', sans-serif;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #1c1e26;
+    }
+    
+    /* Estilo de Tarjetas y Contenedores */
+    div.stForm, div[data-testid="stExpander"], .stTable, div[data-testid="stMetricValue"] {
+        background-color: #252836 !important;
+        border: 1px solid #323545 !important;
+        border-radius: 15px !important;
+        padding: 20px !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+
+    /* Botones del Menú Lateral - Alineados a la Izquierda */
     div.stButton > button {
         text-align: left !important;
         justify-content: flex-start !important;
-        padding-left: 20px !important;
+        background-color: transparent !important;
+        color: #a0a0a0 !important;
+        border: none !important;
+        border-radius: 10px !important;
+        padding: 10px 20px !important;
+        transition: all 0.3s ease;
+        width: 100%;
+    }
+    div.stButton > button:hover {
+        background-color: #323545 !important;
+        color: #ffffff !important;
+        transform: translateX(5px);
+    }
+    
+    /* Headers y Títulos */
+    h1, h2, h3 {
+        color: #ffffff !important;
+        font-weight: 700 !important;
+    }
+    
+    /* Dataframes y tablas */
+    .stDataFrame, [data-testid="stTable"] {
+        border-radius: 10px !important;
+        overflow: hidden !important;
+        background-color: #252836 !important;
+    }
+    
+    /* Inputs */
+    input, select, .stNumberInput div {
+        background-color: #1c1e26 !important;
+        color: white !important;
+        border-radius: 8px !important;
+        border: 1px solid #323545 !important;
+    }
+    
+    /* Ajuste de métricas */
+    [data-testid="stMetric"] {
+        background-color: #252836;
+        border-radius: 15px;
+        padding: 15px;
+        border: 1px solid #323545;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -37,7 +96,7 @@ if not check_password():
 conn = sqlite3.connect('inmobiliaria.db', check_same_thread=False)
 c = conn.cursor()
 
-# --- FUNCIONES DE FORMATO Y LÓGICA ---
+# --- FUNCIONES DE APOYO ---
 def f_money(v): return f"${float(v or 0):,.2f}"
 
 def f_date_show(fecha_str):
@@ -55,18 +114,21 @@ def get_or_create_id(tabla, nombre_col, valor):
 
 # --- MENÚ LATERAL ---
 with st.sidebar:
-    st.title("📂 MENÚ PRINCIPAL")
+    st.markdown("<h2 style='text-align: center;'>💎 INMOBILIARIA</h2>", unsafe_allow_html=True)
     if 'menu_option' not in st.session_state: st.session_state.menu_option = "Resumen"
+    
     st.markdown("### 📊 **REPORTES**")
-    if st.button("🏠 Resumen", use_container_width=True): st.session_state.menu_option = "Resumen"
+    if st.button("🏠 Resumen General", use_container_width=True): st.session_state.menu_option = "Resumen"
     if st.button("🤝 Comisiones", use_container_width=True): st.session_state.menu_option = "Comisiones"
     if st.button("📈 Gráficos", use_container_width=True): st.session_state.menu_option = "Gráficos"
+    
     st.markdown("---")
     st.markdown("### 🚀 **OPERACIONES**")
     if st.button("📝 Nueva Venta", use_container_width=True): st.session_state.menu_option = "Nueva Venta"
     if st.button("💸 Cobranza Clientes", use_container_width=True): st.session_state.menu_option = "Cobranza"
     if st.button("🔍 Detalle de Crédito", use_container_width=True): st.session_state.menu_option = "Detalle"
     if st.button("⚙️ Gestión de Contratos", use_container_width=True): st.session_state.menu_option = "Gestion"
+    
     st.markdown("---")
     st.markdown("### 📂 **CATÁLOGO**")
     if st.button("📍 Ubicaciones", use_container_width=True): st.session_state.menu_option = "Ubicaciones"
@@ -98,28 +160,26 @@ elif choice == "Gestion":
         SELECT v.id, 'M'||t.manzana||'-L'||t.lote as u, c.nombre as cli, vn.nombre as vend, 
         t.costo, v.enganche, v.meses, v.comision_total, v.fecha, v.id_terreno 
         FROM ventas v JOIN clientes c ON v.id_cliente = c.id 
-        JOIN vendedores vn ON v.id_vendedor = vn.id
-        JOIN terrenos t ON v.id_terreno = t.id
+        JOIN vendedores vn ON v.id_vendedor = vn.id JOIN terrenos t ON v.id_terreno = t.id
     ''', conn)
     
     if not df_g.empty:
         sel_contrato = st.selectbox("Seleccione contrato para Editar o Eliminar:", df_g['u'] + " - " + df_g['cli'])
         datos = df_g[df_g['u'] + " - " + df_g['cli'] == sel_contrato].iloc[0]
         
-        st.markdown("### 📝 Editar Información")
+        st.markdown("### 📝 Formulario de Edición")
         with st.form("edit_form"):
             col1, col2 = st.columns(2)
             new_cli = col1.text_input("Nombre del Cliente", value=datos['cli'])
             new_vend = col1.text_input("Nombre del Vendedor", value=datos['vend'])
             new_fecha = col1.date_input("Fecha de Contrato", value=datetime.strptime(datos['fecha'], '%Y-%m-%d'))
             
-            new_costo = col2.number_input("Valor de Venta ($)", value=float(datos['costo']), format="%.2f")
+            new_costo = col2.number_input("Valor de Venta Real ($)", value=float(datos['costo']), format="%.2f")
             new_enganche = col2.number_input("Enganche ($)", value=float(datos['enganche']), format="%.2f")
             new_plazo = col2.number_input("Plazo (Meses)", value=int(datos['meses']), min_value=1)
             new_comision = col2.number_input("Comisión Total ($)", value=float(datos['comision_total']), format="%.2f")
             
-            c_update, c_delete = st.columns([1,1])
-            if c_update.form_submit_button("💾 GUARDAR CAMBIOS"):
+            if st.form_submit_button("💾 GUARDAR CAMBIOS"):
                 id_c = get_or_create_id('clientes', 'nombre', new_cli)
                 id_v = get_or_create_id('vendedores', 'nombre', new_vend)
                 new_mensu = (new_costo - new_enganche) / new_plazo
@@ -130,15 +190,17 @@ elif choice == "Gestion":
                 conn.commit()
                 st.success("✅ Contrato actualizado correctamente."); st.rerun()
 
-        if st.button("⚠️ ELIMINAR CONTRATO DEFINITIVAMENTE"):
+        st.markdown("---")
+        if st.button("🗑️ ELIMINAR CONTRATO DEFINITIVAMENTE"):
             c.execute("DELETE FROM ventas WHERE id=?", (int(datos['id']),))
             c.execute("UPDATE terrenos SET estatus='Disponible' WHERE id=?", (int(datos['id_terreno']),))
-            conn.commit(); st.success("Venta eliminada y lote liberado."); st.rerun()
+            conn.commit(); st.warning("Venta eliminada y lote liberado."); st.rerun()
 
 elif choice == "Nueva Venta":
     st.header("📝 REGISTRAR NUEVO CONTRATO")
     lt = pd.read_sql_query("SELECT * FROM terrenos WHERE estatus='Disponible'", conn)
-    if lt.empty: st.warning("No hay terrenos disponibles.")
+    if lt.empty: 
+        st.warning("No hay terrenos disponibles en el catálogo.")
     else:
         with st.form("nv"):
             col1, col2 = st.columns(2)
@@ -146,11 +208,13 @@ elif choice == "Nueva Venta":
             c_nombre = col1.text_input("Nombre del Cliente:")
             v_nombre = col1.text_input("Nombre del Vendedor:")
             f_cont = col1.date_input("Fecha de Contrato", datetime.now())
+            
             p_cat = float(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['costo'].values[0])
             costo_v = col2.number_input("Valor de Venta Real ($)", value=p_cat, format="%.2f")
             eng_v = col2.number_input("Enganche Recibido ($)", format="%.2f")
             plz_v = col2.number_input("Plazo (Meses)", value=48, min_value=1)
             com_v = col2.number_input("Comisión del Vendedor ($)", format="%.2f")
+            
             if st.form_submit_button("CERRAR VENTA"):
                 if c_nombre and v_nombre:
                     id_c = get_or_create_id('clientes', 'nombre', c_nombre)
@@ -161,6 +225,8 @@ elif choice == "Nueva Venta":
                                  VALUES (?,?,?,?,?,?,?,?)''', (id_l, id_c, id_v, eng_v, plz_v, mensu, f_cont.strftime('%Y-%m-%d'), com_v))
                     c.execute("UPDATE terrenos SET estatus='Vendido', costo=? WHERE id=?", (costo_v, id_l))
                     conn.commit(); st.success("¡Venta Exitosa!"); st.rerun()
+                else:
+                    st.error("Por favor llena el nombre del cliente y vendedor.")
 
 elif choice == "Detalle":
     st.header("🔍 DETALLE DE CRÉDITO Y PROYECCIÓN")
@@ -172,13 +238,30 @@ elif choice == "Detalle":
                                     FROM ventas v JOIN clientes c ON v.id_cliente = c.id 
                                     JOIN terrenos t ON v.id_terreno = t.id WHERE v.id = {vid}''', conn).iloc[0]
         col1, col2, col3 = st.columns(3)
-        col1.metric("Cliente", res['nombre']); col2.metric("Valor Venta", f_money(res['costo'])); col3.metric("Mensualidad", f_money(res['mensualidad']))
-        st.markdown("---"); st.subheader("📅 Tabla Proyectada de Pagos")
+        col1.metric("Cliente", res['nombre'])
+        col2.metric("Valor Venta", f_money(res['costo']))
+        col3.metric("Mensualidad", f_money(res['mensualidad']))
+        
+        st.markdown("---")
+        st.subheader("📅 Tabla Proyectada de Pagos")
         tabla = []; saldo = res['costo'] - res['enganche']
         for i in range(1, int(res['meses']) + 1):
             saldo -= res['mensualidad']
             tabla.append({"Mes": i, "Cuota": f_money(res['mensualidad']), "Saldo Restante": f_money(max(0, saldo))})
-        st.table(tabla[:24]); st.info("Mostrando primeros 24 meses.")
+        st.table(tabla[:24])
+        st.info(f"Mostrando primeros 24 meses de {int(res['meses'])}.")
+
+elif choice == "Cobranza":
+    st.header("💸 RECIBIR ABONOS DE CLIENTES")
+    df_v = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote || ' - ' || c.nombre as l FROM ventas v JOIN terrenos t ON v.id_terreno = t.id JOIN clientes c ON v.id_cliente = c.id", conn)
+    if not df_v.empty:
+        with st.form("cob"):
+            s = st.selectbox("Seleccione Contrato:", df_v['l'])
+            m = st.number_input("Monto a abonar ($)", format="%.2f")
+            if st.form_submit_button("REGISTRAR PAGO"):
+                id_v = int(df_v[df_v['l'] == s]['id'].values[0])
+                c.execute("INSERT INTO pagos (id_venta, monto, fecha) VALUES (?,?,?)", (id_v, m, datetime.now().strftime('%Y-%m-%d')))
+                conn.commit(); st.success("Pago guardado correctamente"); st.rerun()
 
 elif choice == "Comisiones":
     st.header("🤝 REPORTE DE COMISIONES")
@@ -192,40 +275,35 @@ elif choice == "Comisiones":
         st.dataframe(view[['Lote', 'Vendedor', 'Total', 'Pagado', 'Pendiente']], use_container_width=True, hide_index=True)
         with st.expander("Registrar pago a vendedor"):
             sel = st.selectbox("Contrato:", df_c[df_c['Pendiente']>0]['Lote'] + " (" + df_c['Vendedor'] + ")")
-            m_p = st.number_input("Monto ($)", format="%.2f")
+            m_p = st.number_input("Monto pagado ($)", format="%.2f")
             if st.button("CONFIRMAR PAGO"):
                 id_v = int(df_c[df_c['Lote'] + " (" + df_c['Vendedor'] + ")" == sel]['id'].values[0])
                 c.execute("INSERT INTO pagos_comisiones (id_venta, monto_pagado, fecha) VALUES (?,?,?)", (id_v, m_p, datetime.now().strftime('%Y-%m-%d')))
                 conn.commit(); st.rerun()
 
-elif choice == "Cobranza":
-    st.header("💸 RECIBIR ABONOS")
-    df_v = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote || ' - ' || c.nombre as l FROM ventas v JOIN terrenos t ON v.id_terreno = t.id JOIN clientes c ON v.id_cliente = c.id", conn)
-    if not df_v.empty:
-        with st.form("cob"):
-            s = st.selectbox("Seleccione Contrato:", df_v['l'])
-            m = st.number_input("Monto ($)", format="%.2f")
-            if st.form_submit_button("REGISTRAR PAGO"):
-                id_v = int(df_v[df_v['l'] == s]['id'].values[0])
-                c.execute("INSERT INTO pagos (id_venta, monto, fecha) VALUES (?,?,?)", (id_v, m, datetime.now().strftime('%Y-%m-%d')))
-                conn.commit(); st.success("Pago guardado"); st.rerun()
-
 elif choice == "Ubicaciones":
-    st.header("📍 UBICACIONES")
+    st.header("📍 CATÁLOGO DE UBICACIONES")
     with st.form("cat"):
         m_c, l_c, p_c = st.columns(3)
-        ma = m_c.text_input("Manzana"); lo = l_c.text_input("Lote"); pr = p_c.number_input("Precio ($)", format="%.2f")
-        if st.form_submit_button("Guardar"):
+        ma = m_c.text_input("Manzana"); lo = l_c.text_input("Lote"); pr = p_c.number_input("Precio Sugerido ($)", format="%.2f")
+        if st.form_submit_button("Guardar Ubicación"):
             c.execute("INSERT INTO terrenos (manzana, lote, costo) VALUES (?,?,?)", (ma, lo, pr)); conn.commit(); st.rerun()
     st.dataframe(pd.read_sql_query("SELECT manzana, lote, costo, estatus FROM terrenos", conn), use_container_width=True)
 
 elif choice == "Directorio":
     st.header("👥 DIRECTORIO")
     c1, c2 = st.columns(2)
-    with c1: st.subheader("Clientes"); st.dataframe(pd.read_sql_query("SELECT nombre FROM clientes ORDER BY nombre", conn), hide_index=True)
-    with c2: st.subheader("Vendedores"); st.dataframe(pd.read_sql_query("SELECT nombre FROM vendedores ORDER BY nombre", conn), hide_index=True)
+    with c1: 
+        st.subheader("Clientes")
+        st.dataframe(pd.read_sql_query("SELECT nombre FROM clientes ORDER BY nombre", conn), hide_index=True, use_container_width=True)
+    with c2: 
+        st.subheader("Vendedores")
+        st.dataframe(pd.read_sql_query("SELECT nombre FROM vendedores ORDER BY nombre", conn), hide_index=True, use_container_width=True)
 
 elif choice == "Gráficos":
-    st.header("📈 GRÁFICOS")
+    st.header("📈 DESEMPEÑO DE VENTAS")
     df_g = pd.read_sql_query('''SELECT vn.nombre as Vendedor, SUM(t.costo) as Total FROM ventas v JOIN vendedores vn ON v.id_vendedor = vn.id JOIN terrenos t ON v.id_terreno = t.id GROUP BY vn.nombre''', conn)
-    if not df_g.empty: st.bar_chart(data=df_g, x="Vendedor", y="Total")
+    if not df_g.empty: 
+        st.bar_chart(data=df_g, x="Vendedor", y="Total")
+    else:
+        st.info("No hay datos para mostrar gráficos.")
