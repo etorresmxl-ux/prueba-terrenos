@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
+import os
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Inmobiliaria", layout="wide")
+st.set_page_config(page_title="Inmobiliaria Pro v41", layout="wide")
 
 # --- SEGURIDAD ---
 def check_password():
@@ -24,7 +25,8 @@ if not check_password():
     st.stop()
 
 # --- CONEXIÓN A BASE DE DATOS ---
-conn = sqlite3.connect('inmobiliaria.db', check_same_thread=False)
+DB_NAME = 'inmobiliaria.db'
+conn = sqlite3.connect(DB_NAME, check_same_thread=False)
 c = conn.cursor()
 
 # --- FUNCIONES DE APOYO ---
@@ -54,6 +56,20 @@ def color_atraso(row):
 with st.sidebar:
     st.title("📂 Menú Principal")
     choice = st.radio("Navegación", ["Resumen", "Nueva Venta", "Cobranza", "Gestión de Pagos", "Detalle de Crédito", "Gestión de Contratos", "Ubicaciones", "Directorio"])
+    
+    st.markdown("---")
+    st.subheader("🛡️ Seguridad")
+    
+    # BOTÓN DE RESPALDO
+    if os.path.exists(DB_NAME):
+        with open(DB_NAME, "rb") as f:
+            st.download_button(
+                label="📥 Descargar Respaldo (.db)",
+                data=f,
+                file_name=f"respaldo_inmobiliaria_{datetime.now().strftime('%Y%m%d_%H%M')}.db",
+                mime="application/x-sqlite3",
+                help="Descarga una copia de la base de datos para guardarla en tu Google Drive"
+            )
 
 # --- PÁGINA: RESUMEN ---
 if choice == "Resumen":
@@ -112,7 +128,7 @@ elif choice == "Gestión de Pagos":
                     except: st.error(f"Fecha inválida en {row['Cliente']}")
             conn.commit(); st.success("Sincronizado"); st.rerun()
 
-# --- PÁGINA: DETALLE DE CRÉDITO (CON MENSUALIDAD AGREGADA) ---
+# --- PÁGINA: DETALLE DE CRÉDITO ---
 elif choice == "Detalle de Crédito":
     st.header("🔍 Estado de Cuenta Individual")
     df_u = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote || ' - ' || c.nombre as info FROM ventas v JOIN terrenos t ON v.id_terreno = t.id JOIN clientes c ON v.id_cliente = c.id", conn)
@@ -125,24 +141,18 @@ elif choice == "Detalle de Crédito":
             FROM ventas v JOIN clientes c ON v.id_cliente = c.id JOIN terrenos t ON v.id_terreno = t.id 
             WHERE v.id = {vid}''', conn).iloc[0]
         
-        # FILA DE MÉTRICAS (Datos Generales con Mensualidad)
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Ubicación", res['u'])
         m1.metric("Valor Total", f_money(res['costo']))
-        
         m2.metric("Cliente", res['nombre'])
         m2.metric("Enganche", f_money(res['enganche']))
-        
         m3.metric("Fecha Contrato", f_date_show(res['fecha']))
-        m3.metric("Mensualidad", f_money(res['mensualidad'])) # <--- NUEVO CAMPO
-        
+        m3.metric("Mensualidad", f_money(res['mensualidad'])) 
         m4.metric("Plazo", f"{int(res['meses'])} meses")
         m4.metric("Total Pagado", f_money(res['enganche'] + res['total_abonos']))
-        
         m5.metric("Saldo Pendiente", f_money(res['costo'] - (res['enganche'] + res['total_abonos'])))
         
         st.markdown("---")
-        # TABLA DE AMORTIZACIÓN
         pagos_reales = pd.read_sql_query(f"SELECT monto, fecha FROM pagos WHERE id_venta = {vid} ORDER BY fecha ASC", conn)
         tabla_amort = []; abonos_acum = res['total_abonos']; f_ini = datetime.strptime(res['fecha'], '%Y-%m-%d')
         for i in range(1, int(res['meses']) + 1):
