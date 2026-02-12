@@ -4,7 +4,18 @@ import sqlite3
 from datetime import datetime
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Inmobiliaria Pro v24", layout="wide")
+st.set_config = st.set_page_config(page_title="Inmobiliaria Pro v25", layout="wide")
+
+# --- ESTILO CSS PERSONALIZADO (Alineación de menú) ---
+st.markdown("""
+    <style>
+    div.stButton > button {
+        text-align: left !important;
+        justify-content: flex-start !important;
+        padding-left: 20px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # --- SISTEMA DE SEGURIDAD ---
 def check_password():
@@ -36,18 +47,14 @@ def f_date_show(fecha_str):
     except:
         return fecha_str
 
-# --- LÓGICA DE AUTO-REGISTRO ---
 def get_or_create_id(tabla, nombre_col, valor):
-    """Busca un nombre, si no existe lo crea y devuelve el ID"""
     valor = valor.strip()
     c.execute(f"SELECT id FROM {tabla} WHERE {nombre_col} = ?", (valor,))
     result = c.fetchone()
-    if result:
-        return result[0]
-    else:
-        c.execute(f"INSERT INTO {tabla} ({nombre_col}) VALUES (?)", (valor,))
-        conn.commit()
-        return c.lastrowid
+    if result: return result[0]
+    c.execute(f"INSERT INTO {tabla} ({nombre_col}) VALUES (?)", (valor,))
+    conn.commit()
+    return c.lastrowid
 
 # --- MENÚ LATERAL ---
 with st.sidebar:
@@ -94,24 +101,58 @@ if choice == "Resumen":
     else:
         st.info("No hay ventas registradas.")
 
+elif choice == "Detalle":
+    st.header("🔍 DETALLE DE CRÉDITO Y PROYECCIÓN")
+    df_u = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote as u FROM ventas v JOIN terrenos t ON v.id_terreno = t.id", conn)
+    if not df_u.empty:
+        sel_u = st.selectbox("Seleccione el Lote para ver su tabla de pagos:", df_u['u'])
+        vid = int(df_u[df_u['u'] == sel_u]['id'].values[0])
+        
+        res = pd.read_sql_query(f'''
+            SELECT c.nombre, t.costo, v.enganche, v.fecha, v.meses, v.mensualidad 
+            FROM ventas v JOIN clientes c ON v.id_cliente = c.id 
+            JOIN terrenos t ON v.id_terreno = t.id WHERE v.id = {vid}
+        ''', conn).iloc[0]
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Cliente", res['nombre'])
+        col2.metric("Valor Venta", f_money(res['costo']))
+        col3.metric("Mensualidad", f_money(res['mensualidad']))
+        
+        st.markdown("---")
+        st.subheader("📅 Tabla Proyectada de Pagos")
+        
+        # Generar tabla de amortización simple
+        tabla = []
+        saldo_insoluto = res['costo'] - res['enganche']
+        fecha_pago = datetime.strptime(res['fecha'], '%Y-%m-%d')
+        
+        for i in range(1, int(res['meses']) + 1):
+            saldo_insoluto -= res['mensualidad']
+            # Evitar saldos negativos por decimales
+            if saldo_insoluto < 0: saldo_insoluto = 0
+            
+            tabla.append({
+                "Mes": i,
+                "Cuota Sugerida": f_money(res['mensualidad']),
+                "Saldo Restante": f_money(saldo_insoluto)
+            })
+            
+        st.table(tabla[:24]) # Mostramos los primeros 24 meses por legibilidad
+        if res['meses'] > 24:
+            st.info(f"Mostrando primeros 24 de {int(res['meses'])} meses totales.")
+
 elif choice == "Nueva Venta":
     st.header("📝 REGISTRAR NUEVO CONTRATO")
     lt = pd.read_sql_query("SELECT * FROM terrenos WHERE estatus='Disponible'", conn)
     if lt.empty: 
-        st.warning("No hay terrenos disponibles en el catálogo de Ubicaciones.")
+        st.warning("No hay terrenos disponibles.")
     else:
-        # Sugerencias para el usuario (opcional, ayuda a no repetir nombres mal escritos)
-        cli_list = pd.read_sql_query("SELECT nombre FROM clientes", conn)['nombre'].tolist()
-        ven_list = pd.read_sql_query("SELECT nombre FROM vendedores", conn)['nombre'].tolist()
-
         with st.form("nv"):
             col1, col2 = st.columns(2)
             l_sel = col1.selectbox("Lote Disponible:", lt['manzana'] + "-" + lt['lote'])
-            
-            # Usamos text_input para permitir nombres nuevos
-            c_nombre = col1.text_input("Nombre del Cliente:", help="Si no existe, se creará automáticamente")
-            v_nombre = col1.text_input("Nombre del Vendedor:", help="Si no existe, se creará automáticamente")
-            
+            c_nombre = col1.text_input("Nombre del Cliente:")
+            v_nombre = col1.text_input("Nombre del Vendedor:")
             f_cont = col1.date_input("Fecha de Contrato", datetime.now())
             
             p_cat = float(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['costo'].values[0])
@@ -121,26 +162,16 @@ elif choice == "Nueva Venta":
             com_v = col2.number_input("Comisión del Vendedor ($)", min_value=0.0, format="%.2f")
             
             if st.form_submit_button("CERRAR VENTA"):
-                if not c_nombre or not v_nombre:
-                    st.error("Por favor escribe el nombre del cliente y del vendedor.")
-                else:
-                    # 1. Obtener o crear IDs
+                if c_nombre and v_nombre:
                     id_c = get_or_create_id('clientes', 'nombre', c_nombre)
                     id_v = get_or_create_id('vendedores', 'nombre', v_nombre)
                     id_l = int(lt[lt['manzana'] + "-" + lt['lote'] == l_sel]['id'].values[0])
-                    
-                    # 2. Calcular mensualidad
                     mensu = (costo_v - eng_v) / plz_v
-                    
-                    # 3. Insertar Venta
                     c.execute('''INSERT INTO ventas (id_terreno, id_cliente, id_vendedor, enganche, meses, mensualidad, fecha, comision_total) 
-                                 VALUES (?,?,?,?,?,?,?,?)''', 
-                              (id_l, id_c, id_v, eng_v, plz_v, mensu, f_cont.strftime('%Y-%m-%d'), com_v))
-                    
-                    # 4. Actualizar Terreno
+                                 VALUES (?,?,?,?,?,?,?,?)''', (id_l, id_c, id_v, eng_v, plz_v, mensu, f_cont.strftime('%Y-%m-%d'), com_v))
                     c.execute("UPDATE terrenos SET estatus='Vendido', costo=? WHERE id=?", (costo_v, id_l))
                     conn.commit()
-                    st.success(f"¡Venta registrada! Cliente '{c_nombre}' y Vendedor '{v_nombre}' gestionados correctamente.")
+                    st.success("¡Venta Exitosa!")
                     st.rerun()
 
 elif choice == "Comisiones":
@@ -178,16 +209,6 @@ elif choice == "Cobranza":
                 c.execute("INSERT INTO pagos (id_venta, monto, fecha) VALUES (?,?,?)", (id_v, m, datetime.now().strftime('%Y-%m-%d')))
                 conn.commit(); st.success("Pago guardado"); st.rerun()
 
-elif choice == "Detalle":
-    st.header("🔍 DETALLE DE CRÉDITO")
-    df_u = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote as u FROM ventas v JOIN terrenos t ON v.id_terreno = t.id", conn)
-    if not df_u.empty:
-        sel_u = st.selectbox("Lote:", df_u['u'])
-        vid = int(df_u[df_u['u'] == sel_u]['id'].values[0])
-        res = pd.read_sql_query(f"SELECT c.nombre, t.costo, v.enganche, v.fecha, v.meses, v.mensualidad FROM ventas v JOIN clientes c ON v.id_cliente = c.id JOIN terrenos t ON v.id_terreno = t.id WHERE v.id = {vid}", conn).iloc[0]
-        st.write(f"**Cliente:** {res['nombre']} | **Valor:** {f_money(res['costo'])} | **Fecha:** {f_date_show(res['fecha'])}")
-        st.write(f"**Mensualidad:** {f_money(res['mensualidad'])} | **Plazo:** {int(res['meses'])} meses")
-
 elif choice == "Gestion":
     st.header("⚙️ GESTIÓN DE CONTRATOS")
     df_g = pd.read_sql_query("SELECT v.id, 'M'||t.manzana||'-L'||t.lote as u, c.nombre as cli, v.id_terreno FROM ventas v JOIN clientes c ON v.id_cliente = c.id JOIN terrenos t ON v.id_terreno = t.id", conn)
@@ -215,10 +236,10 @@ elif choice == "Directorio":
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("Clientes")
-        st.dataframe(pd.read_sql_query("SELECT id, nombre FROM clientes ORDER BY nombre", conn), hide_index=True)
+        st.dataframe(pd.read_sql_query("SELECT nombre FROM clientes ORDER BY nombre", conn), hide_index=True)
     with c2:
         st.subheader("Vendedores")
-        st.dataframe(pd.read_sql_query("SELECT id, nombre FROM vendedores ORDER BY nombre", conn), hide_index=True)
+        st.dataframe(pd.read_sql_query("SELECT nombre FROM vendedores ORDER BY nombre", conn), hide_index=True)
 
 elif choice == "Gráficos":
     st.header("📈 GRÁFICOS DE VENTAS")
