@@ -25,10 +25,10 @@ creds = creds = {
 
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1TIeJ2fjJ6WHn124b8iL9LgTNuRZ_50YyekSad0uK1jE/"
 
-# --- CONEXIÓN CORREGIDA ---
+# --- CONEXIÓN DEFINITIVA ---
 try:
-    # Eliminamos el type="gsheets" de afuera porque ya viene dentro de tus 'creds'
-    conn = st.connection("gsheets", **creds)
+    # Usamos GSheetsConnection directamente para evitar el error de 'service_account'
+    conn = st.connection("gsheets", type=GSheetsConnection, **creds)
 except Exception as e:
     st.error(f"Error de conexión con Google Drive: {e}")
     st.stop()
@@ -124,4 +124,5 @@ elif choice == "Directorio":
             n_df = pd.concat([df_c, pd.DataFrame([{"nombre": nom}])], ignore_index=True)
             guardar(n_df, "clientes")
             st.rerun()
+
 
