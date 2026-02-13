@@ -8,7 +8,7 @@ from dateutil.relativedelta import relativedelta
 st.set_page_config(page_title="Inmobiliaria - Drive Mode", layout="wide")
 
 # --- CONFIGURACIÓN DE LA HOJA (Pega aquí tu link) ---
-URL_SHEET = "https://docs.google.com/spreadsheets/d/1TIeJ2fjJ6WHnl24b8iL9LgTNuRZ_5OYyekSad0uK1jE/edit?usp=sharing"
+URL_SHEET = "https://docs.google.com/spreadsheets/d/1TIeJ2fjJ6WHnl24b8iL9LgTNuRZ_5OYyekSad0uK1jE/"
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 try:
@@ -119,4 +119,5 @@ elif choice == "Directorio":
                 n_c = pd.concat([df_c, pd.DataFrame([{"nombre": nom}])], ignore_index=True)
                 guardar(n_c, "clientes")
                 st.rerun()
+
 
