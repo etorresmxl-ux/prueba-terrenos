@@ -5,8 +5,7 @@ import pandas as pd
 # --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Inmobiliaria", layout="wide")
 
-# --- TUS CREDENCIALES (Copiadas de tu JSON) ---
-# Al ponerlas aquí, la app no necesita el cuadro de "Secrets" de Streamlit
+# --- TUS CREDENCIALES ---
 creds = {
     "type": "service_account",
     "project_id": "inmobiliaria-487222",
@@ -20,69 +19,32 @@ creds = {
     "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/inmobiliaria%40inmobiliaria-487222.iam.gserviceaccount.com"
 }
 
-# Link de tu Google Sheet
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1TIeJ2fjJ6WHn124b8iL9LgTNuRZ_50YyekSad0uK1jE/"
 
-# --- CONEXIÓN A GOOGLE SHEETS ---
+# --- CONEXIÓN CORREGIDA ---
 try:
-    # IMPORTANTE: Aquí pasamos 'creds' directamente para que funcione sin Secrets
-    conn = st.connection("gsheets", type=GSheetsConnection, **creds)
+    # Quitamos 'type' de aquí para que no choque con el 'type' que ya está en 'creds'
+    conn = st.connection("gsheets", **creds)
 except Exception as e:
     st.error(f"Error al conectar con Google: {e}")
     st.stop()
 
-# --- FUNCIONES PARA LEER Y GUARDAR ---
-def leer_datos(pestaña):
-    return conn.read(spreadsheet=URL_SHEET, worksheet=pestaña)
+# --- INTERFAZ ---
+st.title("🏡 Gestión Inmobiliaria")
 
-def guardar_datos(df, pestaña):
-    conn.update(spreadsheet=URL_SHEET, worksheet=pestaña, data=df)
-    st.cache_data.clear()
+# Intentar leer la pestaña terrenos
+try:
+    df = conn.read(spreadsheet=URL_SHEET, worksheet="terrenos")
+    st.write("### Inventario Actual")
+    st.dataframe(df, use_container_width=True)
+except Exception as e:
+    st.error(f"Error al leer la hoja: {e}")
 
-# --- INTERFAZ DE LA APP ---
-st.title("🏡 Sistema de Gestión Inmobiliaria")
-
-menu = st.sidebar.selectbox("Selecciona una opción", ["Ver Inventario", "Registrar Terreno"])
-
-if menu == "Ver Inventario":
-    st.subheader("📊 Lotes Registrados en Google Sheets")
-    try:
-        df = leer_datos("terrenos")
-        if not df.empty:
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("La hoja está vacía.")
-    except Exception as e:
-        st.error(f"No se pudo leer la pestaña 'terrenos'. Revisa que el nombre sea exacto en tu Excel. Error: {e}")
-
-elif menu == "Registrar Terreno":
-    st.subheader("📝 Agregar Nuevo Lote")
-    df_actual = leer_datos("terrenos")
-    
-    with st.form("formulario_registro"):
-        col1, col2 = st.columns(2)
-        manzana = col1.text_input("Número de Manzana")
-        lote = col2.text_input("Número de Lote")
-        precio = st.number_input("Precio de Venta", min_value=0.0)
-        
-        enviar = st.form_submit_button("Guardar Terreno")
-        
-        if enviar:
-            if manzana and lote:
-                # Crear la nueva fila
-                nueva_fila = pd.DataFrame([{
-                    "manzana": manzana,
-                    "lote": lote,
-                    "costo": precio,
-                    "estatus": "Disponible"
-                }])
-                
-                # Unir con lo que ya existe
-                df_nuevo = pd.concat([df_actual, nueva_fila], ignore_index=True)
-                
-                # Subir a Google Sheets
-                guardar_datos(df_nuevo, "terrenos")
-                st.success(f"✅ ¡Terreno Mz {manzana} Lote {lote} guardado con éxito!")
-                st.balloons()
-            else:
-                st.warning("Por favor rellena Manzana y Lote.")
+# Formulario simple para agregar
+with st.form("nuevo_lote"):
+    st.write("➕ **Agregar Nuevo Lote**")
+    mz = st.text_input("Manzana")
+    lt = st.text_input("Lote")
+    precio = st.number_input("Precio", min_value=0)
+    if st.form_submit_button("Guardar"):
+        st.info("Conexión establecida. Para guardar datos, necesitamos configurar permisos de escritura.")
