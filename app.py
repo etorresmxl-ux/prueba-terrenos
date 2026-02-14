@@ -3,7 +3,7 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# 1. Configuración de la página (Título fijo)
+# 1. Configuración de la página
 st.set_page_config(page_title="Inmobiliaria", layout="wide")
 
 # 2. Conexión a Google Sheets
@@ -39,7 +39,7 @@ if st.sidebar.button("🔄 Actualizar Base de Datos"):
 def cargar_datos(pestana):
     try:
         return conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 # --- LÓGICA DE LAS SECCIONES ---
@@ -48,45 +48,35 @@ st.title(f"Inmobiliaria - {menu[2:]}")
 
 if menu == "🏠 Inicio":
     st.subheader("Resumen de Créditos Activos")
-    st.info("Panel principal con indicadores clave de la cartera.")
+    st.info("Panel principal con indicadores clave.")
 
 elif menu == "📝 Ventas":
     st.subheader("Registro de Nuevo Contrato")
-    
-    # Cargamos datos para las listas desplegables
     df_ubicaciones = cargar_datos("ubicaciones")
     df_vendedores = cargar_datos("vendedores")
     df_clientes = cargar_datos("clientes")
 
     with st.form("form_ventas"):
         col1, col2 = st.columns(2)
-        
         with col1:
-            # Procesar Ubicaciones al formato M##-L##
             if not df_ubicaciones.empty:
-                # Creamos la etiqueta combinando Manzana y Lote
+                # Generamos M##-L## para el listado de ventas
                 df_ubicaciones['etiqueta'] = "M" + df_ubicaciones['manzana'].astype(str) + "-L" + df_ubicaciones['lote'].astype(str)
-                opciones_ubi = df_ubicaciones['etiqueta'].tolist()
+                opciones_ubi = df_ubicaciones[df_ubicaciones['estatus'] == 'Disponible']['etiqueta'].tolist()
             else:
-                opciones_ubi = ["No hay ubicaciones registradas"]
+                opciones_ubi = ["No hay ubicaciones"]
             
-            ubicacion_sel = st.selectbox("Seleccione la Ubicación (Manzana-Lote)", options=opciones_ubi)
-            
-            # Cliente (del Directorio)
-            opciones_cli = df_clientes["nombre"].tolist() if not df_clientes.empty else ["No hay clientes"]
-            cliente_sel = st.selectbox("Nombre del Cliente", options=opciones_cli)
-            
-            # Vendedor (del Directorio)
-            opciones_ven = df_vendedores["nombre"].tolist() if not df_vendedores.empty else ["No hay vendedores"]
-            vendedor_sel = st.selectbox("Seleccione el Vendedor", options=opciones_ven)
+            st.selectbox("Seleccione la Ubicación", options=opciones_ubi)
+            st.selectbox("Nombre del Cliente", options=df_clientes["nombre"].tolist() if not df_clientes.empty else ["No hay"])
+            st.selectbox("Seleccione el Vendedor", options=df_vendedores["nombre"].tolist() if not df_vendedores.empty else ["No hay"])
 
         with col2:
-            fecha_contrato = st.date_input("Fecha de Contrato", value=datetime.now())
-            comision_monto = st.number_input("Monto de Comisión ($)", min_value=0.0, step=100.0)
-            observaciones = st.text_area("Observaciones adicionales")
+            st.date_input("Fecha de Contrato", value=datetime.now())
+            st.number_input("Monto de Comisión ($)", min_value=0.0)
+            st.text_area("Observaciones")
 
         if st.form_submit_button("Generar Contrato"):
-            st.success(f"Contrato registrado: {cliente_sel} compró {ubicacion_sel} con el vendedor {vendedor_sel}")
+            st.success("Contrato registrado exitosamente.")
 
 elif menu == "💰 Cobranza":
     st.subheader("Registro de Pagos / Abonos")
@@ -99,9 +89,43 @@ elif menu == "📂 Gestión de Contratos":
     st.subheader("Base de Datos de Contratos")
 
 elif menu == "📑 Catálogo":
-    st.subheader("Gestión de Ubicaciones")
-    st.write("Datos actuales en la pestaña 'ubicaciones':")
-    st.dataframe(cargar_datos("ubicaciones"), use_container_width=True, hide_index=True)
+    st.subheader("Inventario de Ubicaciones")
+    
+    # 1. Formulario para agregar nuevas ubicaciones
+    with st.expander("➕ Agregar Nueva Ubicación para Venta"):
+        with st.form("nuevo_lote"):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                nueva_manzana = st.number_input("Manzana", min_value=1, step=1)
+            with c2:
+                nuevo_lote = st.number_input("Lote", min_value=1, step=1)
+            with c3:
+                nuevo_precio = st.number_input("Precio de Lista ($)", min_value=0.0, step=1000.0)
+            
+            # Generación automática de la etiqueta para mostrar al usuario
+            etiqueta_auto = f"M{nueva_manzana}-L{nuevo_lote}"
+            st.write(f"**Ubicación a generar:** {etiqueta_auto}")
+            
+            if st.form_submit_button("Registrar Ubicación"):
+                st.info(f"Se registraría: {etiqueta_auto} con precio de ${nuevo_precio}")
+                st.warning("Nota: La escritura directa a Google Sheets requiere configuración adicional. Por ahora, agrégalo manualmente al Excel y presiona 'Actualizar'.")
+
+    st.divider()
+
+    # 2. Listado de ubicaciones existentes
+    df_cat = cargar_datos("ubicaciones")
+    if not df_cat.empty:
+        # Aseguramos que la columna 'ubicacion' se vea como M##-L##
+        df_cat['ubicacion'] = "M" + df_cat['manzana'].astype(str) + "-L" + df_cat['lote'].astype(str)
+        
+        # Reordenamos columnas para que sea fácil de leer
+        cols = ['ubicacion', 'manzana', 'lote', 'precio', 'estatus']
+        # Filtramos solo las columnas que existan para evitar errores
+        df_display = df_cat[[c for c in cols if c in df_cat.columns]]
+        
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+    else:
+        st.write("No hay datos en la pestaña 'ubicaciones'.")
 
 elif menu == "📇 Directorio":
     st.subheader("Registro de Clientes y Vendedores")
@@ -112,7 +136,7 @@ elif menu == "📇 Directorio":
         st.dataframe(cargar_datos("vendedores"), use_container_width=True)
 
 elif menu == "📈 Comisiones":
-    st.subheader("Resumen de Comisiones por Vendedor")
+    st.subheader("Resumen de Comisiones")
 
 # --- FOOTER ---
 st.sidebar.write("---")
