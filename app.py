@@ -27,147 +27,113 @@ if st.sidebar.button("🔄 Actualizar Base de Datos"):
 # --- FUNCIONES DE APOYO ---
 def cargar_datos(pestana):
     try:
-        df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
-        return df
-    except Exception:
+        return conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
+    except:
         return pd.DataFrame()
 
 # --- LÓGICA DE LAS SECCIONES ---
 st.title(f"Inmobiliaria - {menu[2:]}")
 
-# --- MÓDULO: CATALOGO (INVENTARIO) ---
-if menu == "📑 Catálogo":
-    st.subheader("Inventario de Ubicaciones")
-    
-    with st.expander("➕ Agregar Nueva Ubicación para Venta"):
-        with st.form("nuevo_lote", clear_on_submit=True):
-            c1, c2, c3 = st.columns(3)
-            with c1: m = st.number_input("Manzana", min_value=1, step=1)
-            with c2: l = st.number_input("Lote", min_value=1, step=1)
-            with c3: p = st.number_input("Precio de Lista ($)", min_value=0.0, step=1000.0)
-            
-            etiqueta = f"M{m}-L{l}"
-            st.write(f"**Se creará la ubicación:** {etiqueta}")
-            
-            if st.form_submit_button("Registrar Ubicación"):
-                try:
-                    df_actual = cargar_datos("ubicaciones")
-                    nuevo = pd.DataFrame([{
-                        "id_lote": len(df_actual)+1, 
-                        "ubicacion": etiqueta, 
-                        "manzana": m, 
-                        "lote": l, 
-                        "precio": p, 
-                        "estatus": "Disponible"
-                    }])
-                    df_final = pd.concat([df_actual, nuevo], ignore_index=True)
-                    conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_final)
-                    st.success(f"✅ {etiqueta} guardado exitosamente.")
-                    st.cache_data.clear()
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
-
-    st.divider()
-
-    df_cat = cargar_datos("ubicaciones")
-    if not df_cat.empty:
-        # LIMPIEZA MÁGICA: Convertimos a número para evitar el error de formato
-        df_cat["precio"] = pd.to_numeric(df_cat["precio"], errors='coerce')
-        
-        st.dataframe(
-            df_cat[["ubicacion", "precio", "estatus"]], 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "ubicacion": "Ubicación",
-                "precio": st.column_config.NumberColumn(
-                    "Precio de Venta",
-                    format="$%,.2f"
-                ),
-                "estatus": "Estatus"
-            }
-        )
-    else:
-        st.info("No hay ubicaciones registradas aún.")
-
 # --- MÓDULO: VENTAS ---
-elif menu == "📝 Ventas":
-    st.subheader("Registro de Nuevo Contrato")
+if menu == "📝 Ventas":
+    st.subheader("Generación de Nuevo Contrato")
+    
     df_ubi = cargar_datos("ubicaciones")
     df_cli = cargar_datos("clientes")
     df_ven = cargar_datos("vendedores")
 
-    with st.form("form_ventas"):
-        col1, col2 = st.columns(2)
-        with col1:
-            if not df_ubi.empty:
-                opciones_ubi = df_ubi[df_ubi['estatus'] == 'Disponible']['ubicacion'].tolist()
-            else:
-                opciones_ubi = ["No hay ubicaciones"]
+    # Filtrar solo ubicaciones disponibles
+    if not df_ubi.empty:
+        df_disponibles = df_ubi[df_ubi['estatus'] == 'Disponible']
+        lista_ubi = df_disponibles['ubicacion'].tolist()
+    else:
+        lista_ubi = []
 
-            u_sel = st.selectbox("Seleccione la Ubicación", options=opciones_ubi)
-            c_sel = st.selectbox("Nombre del Cliente", options=df_cli["nombre"].tolist() if not df_cli.empty else ["No hay"])
-            v_sel = st.selectbox("Seleccione el Vendedor", options=df_ven["nombre"].tolist() if not df_ven.empty else ["No hay"])
+    if not lista_ubi:
+        st.warning("No hay ubicaciones disponibles en el Catálogo.")
+    else:
+        with st.form("registro_venta"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                u_sel = st.selectbox("Seleccione la Ubicación", options=lista_ubi)
+                
+                # Obtener el precio sugerido de la ubicación seleccionada
+                precio_sugerido = float(df_ubi[df_ubi['ubicacion'] == u_sel]['precio'].values[0])
+                
+                v_precio = st.number_input("Precio de Venta Final ($)", value=precio_sugerido, step=1000.0)
+                v_cliente = st.selectbox("Nombre del Cliente", options=df_cli["nombre"].tolist() if not df_cli.empty else ["Registrar en Directorio"])
+                v_vendedor = st.selectbox("Seleccione el Vendedor", options=df_ven["nombre"].tolist() if not df_ven.empty else ["Registrar en Directorio"])
+                v_fecha = st.date_input("Fecha de Contrato", value=datetime.now())
 
-        with col2:
-            f_cont = st.date_input("Fecha de Contrato", value=datetime.now())
-            com_monto = st.number_input("Monto de Comisión ($)", min_value=0.0)
-            obs = st.text_area("Observaciones")
+            with col2:
+                v_enganche = st.number_input("Enganche ($)", min_value=0.0, step=1000.0)
+                v_plazo = st.number_input("Plazo (Meses)", min_value=1, value=12, step=1)
+                v_comision = st.number_input("Comisión del Vendedor ($)", min_value=0.0, step=100.0)
+                
+                # CÁLCULO DE MENSUALIDAD (Tasa 0%)
+                saldo_a_financiar = v_precio - v_enganche
+                mensualidad = saldo_a_financiar / v_plazo if v_plazo > 0 else 0
+                
+                st.markdown("---")
+                st.metric("Saldo a Financiar", f"$ {saldo_a_financiar}")
+                st.metric("Mensualidad Calculada", f"$ {round(mensualidad, 2)}")
+                st.caption("Fórmula: (Precio - Enganche) / Plazo")
 
-        if st.form_submit_button("Generar Contrato"):
-            st.success(f"Contrato de {c_sel} procesado para {u_sel}.")
+            v_obs = st.text_area("Observaciones del contrato")
+            
+            if st.form_submit_button("Confirmar Venta y Generar Contrato"):
+                try:
+                    # 1. Registrar la venta en la pestaña 'ventas' (o 'contratos')
+                    df_ventas = cargar_datos("ventas")
+                    nueva_venta = pd.DataFrame([{
+                        "fecha": v_fecha.strftime('%Y-%m-%d'),
+                        "ubicacion": u_sel,
+                        "cliente": v_cliente,
+                        "vendedor": v_vendedor,
+                        "precio_total": v_precio,
+                        "enganche": v_enganche,
+                        "plazo_meses": v_plazo,
+                        "mensualidad": mensualidad,
+                        "comision": v_comision,
+                        "estatus_pago": "Activo"
+                    }])
+                    
+                    # 2. Actualizar el estatus del lote en la pestaña 'ubicaciones'
+                    df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
+                    
+                    # 3. Guardar cambios
+                    conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_ventas, nueva_venta], ignore_index=True))
+                    conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
+                    
+                    st.success(f"✅ ¡Venta registrada! El lote {u_sel} ahora aparece como VENDIDO.")
+                    st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"Error al procesar la venta: {e}")
+
+# --- MÓDULO: CATALOGO ---
+elif menu == "📑 Catálogo":
+    st.subheader("Inventario de Ubicaciones")
+    df_cat = cargar_datos("ubicaciones")
+    if not df_cat.empty:
+        # Quitamos el formato complejo por ahora para evitar el error
+        st.dataframe(df_cat[["ubicacion", "precio", "estatus"]], use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay ubicaciones registradas.")
 
 # --- MÓDULO: DIRECTORIO ---
 elif menu == "📇 Directorio":
-    st.subheader("Registro de Personas")
-    tab_c, tab_v = st.tabs(["Clientes", "Vendedores"])
-    
-    with tab_c:
-        with st.expander("➕ Registrar Cliente"):
-            with st.form("f_cli", clear_on_submit=True):
-                nom_c = st.text_input("Nombre Completo")
-                tel_c = st.text_input("Teléfono")
-                if st.form_submit_button("Guardar Cliente"):
-                    try:
-                        df_c = cargar_datos("clientes")
-                        nuevo_c = pd.DataFrame([{"id_cliente": len(df_c)+1, "nombre": nom_c, "telefono": tel_c}])
-                        df_c_final = pd.concat([df_c, nuevo_c], ignore_index=True)
-                        conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_c_final)
-                        st.success("Cliente guardado.")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e: st.error(e)
-        
-        df_display_c = cargar_datos("clientes")
-        if not df_display_c.empty:
-            st.dataframe(df_display_c[["nombre", "telefono"]], use_container_width=True, hide_index=True)
+    st.subheader("Clientes y Vendedores")
+    t1, t2 = st.tabs(["Clientes", "Vendedores"])
+    with t1: st.dataframe(cargar_datos("clientes"), use_container_width=True)
+    with t2: st.dataframe(cargar_datos("vendedores"), use_container_width=True)
 
-    with tab_v:
-        with st.expander("➕ Registrar Vendedor"):
-            with st.form("f_ven", clear_on_submit=True):
-                nom_v = st.text_input("Nombre del Asesor")
-                if st.form_submit_button("Guardar Vendedor"):
-                    try:
-                        df_v = cargar_datos("vendedores")
-                        nuevo_v = pd.DataFrame([{"id_vendedor": len(df_v)+1, "nombre": nom_v}])
-                        df_v_final = pd.concat([df_v, nuevo_v], ignore_index=True)
-                        conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=df_v_final)
-                        st.success("Vendedor guardado.")
-                        st.cache_data.clear()
-                        st.rerun()
-                    except Exception as e: st.error(e)
-        
-        df_display_v = cargar_datos("vendedores")
-        if not df_display_v.empty:
-            st.dataframe(df_display_v[["nombre"]], use_container_width=True, hide_index=True)
-
-# Módulos restantes (por definir lógica)
-elif menu == "🏠 Inicio": st.info("Resumen general de la inmobiliaria.")
-elif menu == "💰 Cobranza": st.subheader("Gestión de Cobranza")
-elif menu == "📅 Historial de Pagos": st.subheader("Historial General")
-elif menu == "📂 Gestión de Contratos": st.info("Administración de documentos.")
-elif menu == "📈 Comisiones": st.info("Reporte de pagos a vendedores.")
+# Otros módulos (Estructura base)
+elif menu == "🏠 Inicio": st.info("Panel de Resumen")
+elif menu == "💰 Cobranza": st.subheader("Registro de Pagos")
+elif menu == "📅 Historial de Pagos": st.subheader("Historial")
+elif menu == "📂 Gestión de Contratos": st.subheader("Contratos")
+elif menu == "📈 Comisiones": st.subheader("Comisiones")
 
 st.sidebar.write("---")
-st.sidebar.success("Conectado a Google Sheets")
+st.sidebar.success("Conectado")
