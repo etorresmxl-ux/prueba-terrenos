@@ -22,6 +22,8 @@ def fmt_moneda(valor):
 def cargar_datos(pestana):
     try:
         df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
+        # Limpiamos columnas fantasmas del Excel
+        df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
         return df
     except:
         return pd.DataFrame()
@@ -63,7 +65,7 @@ if menu == "📝 Ventas":
         lista_ubi = []
 
     if not lista_ubi:
-        st.warning("No hay ubicaciones disponibles.")
+        st.warning("No hay ubicaciones disponibles en el Catálogo.")
     else:
         col1, col2 = st.columns(2)
         
@@ -81,7 +83,6 @@ if menu == "📝 Ventas":
             v_fecha = st.date_input("Fecha de Contrato", value=datetime.now())
 
         with col2:
-            # Obtener precio sugerido
             fila_ubi = df_ubi[df_ubi['ubicacion'] == u_sel]
             precio_sugerido = float(fila_ubi['precio'].values[0]) if not fila_ubi.empty else 0.0
             
@@ -97,27 +98,27 @@ if menu == "📝 Ventas":
             st.metric("Saldo a Financiar", fmt_moneda(saldo_a_financiar))
             st.metric("Mensualidad Calculada", fmt_moneda(mensualidad))
 
-        v_obs = st.text_area("Observaciones del contrato")
-
         if st.button("Confirmar Venta y Generar Contrato", type="primary"):
             try:
-                with st.spinner("Guardando..."):
+                with st.spinner("Guardando Contrato..."):
                     df_ventas_act = cargar_datos("ventas")
                     nueva_venta = pd.DataFrame([{
                         "fecha": v_fecha.strftime('%Y-%m-%d'),
                         "ubicacion": u_sel,
                         "cliente": v_cliente,
                         "vendedor": v_vendedor,
-                        "precio_total": v_precio,
-                        "enganche": v_enganche,
+                        "precio_total": float(v_precio),
+                        "enganche": float(v_enganche),
                         "plazo_meses": int(v_plazo),
-                        "mensualidad": mensualidad,
-                        "comision": v_comision,
-                        "estatus_pago": "Activo",
-                        "observaciones": v_obs
+                        "mensualidad": float(mensualidad),
+                        "comision": float(v_comision),
+                        "estatus_pago": "Activo"
                     }])
                     
+                    # Actualizar estatus del lote
                     df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
+                    
+                    # Guardar
                     conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_ventas_act, nueva_venta], ignore_index=True))
                     conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
                     
@@ -125,15 +126,11 @@ if menu == "📝 Ventas":
                         df_c_act = cargar_datos("clientes")
                         conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_c_act, pd.DataFrame([{"nombre": v_cliente}])], ignore_index=True))
                     
-                    if v_input == "+ Agregar Nuevo Vendedor":
-                        df_v_act = cargar_datos("vendedores")
-                        conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=pd.concat([df_v_act, pd.DataFrame([{"nombre": v_vendedor}])], ignore_index=True))
-
-                    st.success("¡Venta exitosa!")
+                    st.success(f"✅ Venta registrada: {u_sel} para {v_cliente}")
                     st.balloons()
                     st.cache_data.clear()
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Error al guardar: {e}")
 
 # --- MÓDULO: DETALLE DE CRÉDITO ---
 elif menu == "📊 Detalle de Crédito":
@@ -173,8 +170,8 @@ elif menu == "📊 Detalle de Crédito":
             tabla.append({
                 "Mes": int(i),
                 "Vencimiento": f_pago.strftime('%d / %m / %Y'),
-                "Monto Cuota": datos['mensualidad'],
-                "Saldo tras el pago": max(s_restante, 0),
+                "Monto Cuota": float(datos['mensualidad']),
+                "Saldo tras el pago": max(float(s_restante), 0),
                 "Estado": "⏳ Pendiente"
             })
         
@@ -185,6 +182,51 @@ elif menu == "📊 Detalle de Crédito":
                          "Mes": st.column_config.NumberColumn(format="%d")
                      })
 
+# --- MÓDULO: COBRANZA ---
+elif menu == "💰 Cobranza":
+    st.subheader("Registro de Abonos")
+    df_v = cargar_datos("ventas")
+    df_p = cargar_datos("pagos")
+
+    if df_v.empty:
+        st.info("No hay contratos activos para cobrar.")
+    else:
+        df_v['display_name'] = df_v['ubicacion'] + " | " + df_v['cliente']
+        c_sel = st.selectbox("Seleccione el Contrato", options=df_v['display_name'].tolist())
+        datos_v = df_v[df_v['display_name'] == c_sel].iloc[0]
+        
+        pagos_hechos = df_p[df_p['ubicacion'] == datos_v['ubicacion']]['monto'].sum() if not df_p.empty else 0.0
+        saldo_actual = (float(datos_v['precio_total']) - float(datos_v['enganche'])) - pagos_hechos
+        
+        col_c1, col_c2, col_c3 = st.columns(3)
+        col_c1.metric("Mensualidad Sugerida", fmt_moneda(datos_v['mensualidad']))
+        col_c2.metric("Total Abonado", fmt_moneda(pagos_hechos))
+        col_c3.metric("Saldo Pendiente", fmt_moneda(saldo_actual))
+        
+        st.divider()
+        
+        with st.form("form_abono", clear_on_submit=True):
+            f1, f2, f3 = st.columns(3)
+            fecha_pago = f1.date_input("Fecha de Pago", value=datetime.now())
+            monto_pago = f2.number_input("Importe del Abono ($)", min_value=0.0, value=float(datos_v['mensualidad']), step=100.0)
+            metodo_pago = f3.selectbox("Método", ["Transferencia", "Efectivo", "Depósito"])
+            
+            if st.form_submit_button("Registrar Abono"):
+                try:
+                    nuevo_pago = pd.DataFrame([{
+                        "fecha": fecha_pago.strftime('%Y-%m-%d'),
+                        "ubicacion": datos_v['ubicacion'],
+                        "cliente": datos_v['cliente'],
+                        "monto": float(monto_pago),
+                        "metodo": metodo_pago
+                    }])
+                    df_p_act = pd.concat([df_p, nuevo_pago], ignore_index=True)
+                    conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p_act)
+                    st.success(f"✅ Pago de {fmt_moneda(monto_pago)} registrado.")
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e: st.error(f"Error: {e}")
+
 # --- MÓDULO: CATALOGO ---
 elif menu == "📑 Catálogo":
     st.subheader("Gestión de Inventario")
@@ -194,16 +236,17 @@ elif menu == "📑 Catálogo":
             m = ca.number_input("Manzana", min_value=1, step=1)
             l = cb.number_input("Lote", min_value=1, step=1)
             p = cc.number_input("Precio ($)", min_value=0.0, step=1000.0)
-            if st.form_submit_button("Registrar"):
+            if st.form_submit_button("Registrar Lote"):
                 df_c = cargar_datos("ubicaciones")
-                nuevo = pd.DataFrame([{"ubicacion": f"M{m}-L{l}", "manzana": m, "lote": l, "precio": p, "estatus": "Disponible"}])
+                nuevo = pd.DataFrame([{"ubicacion": f"M{m}-L{l}", "manzana": int(m), "lote": int(l), "precio": float(p), "estatus": "Disponible"}])
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=pd.concat([df_c, nuevo], ignore_index=True))
-                st.success("Registrado.")
+                st.success("Lote registrado correctamente.")
                 st.cache_data.clear()
                 st.rerun()
 
     df_cat = cargar_datos("ubicaciones")
     if not df_cat.empty:
+        df_cat["precio"] = pd.to_numeric(df_cat["precio"], errors='coerce')
         st.dataframe(
             df_cat[["ubicacion", "precio", "estatus"]], 
             use_container_width=True, 
@@ -216,15 +259,8 @@ elif menu == "📑 Catálogo":
 # --- MÓDULO: DIRECTORIO ---
 elif menu == "📇 Directorio":
     t1, t2 = st.tabs(["Clientes", "Vendedores"])
-    with t1: 
-        st.dataframe(cargar_datos("clientes"), use_container_width=True, hide_index=True)
-    with t2: 
-        st.dataframe(cargar_datos("vendedores"), use_container_width=True, hide_index=True)
-
-# Módulos restantes
-elif menu == "🏠 Inicio": st.info("Panel General de la Inmobiliaria")
-elif menu == "💰 Cobranza": st.info("Módulo de Cobranza - Próximamente")
-elif menu == "📅 Historial": st.info("Historial de movimientos y pagos")
+    with t1: st.dataframe(cargar_datos("clientes"), use_container_width=True, hide_index=True)
+    with t2: st.dataframe(cargar_datos("vendedores"), use_container_width=True, hide_index=True)
 
 st.sidebar.write("---")
-st.sidebar.success("Sistema Conectado y Operativo")
+st.sidebar.success("Sistema Conectado")
