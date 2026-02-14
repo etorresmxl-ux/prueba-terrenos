@@ -36,6 +36,7 @@ menu = st.sidebar.radio(
         "📝 Ventas", 
         "📊 Detalle de Crédito",
         "💰 Cobranza", 
+        "💸 Comisiones",
         "📅 Historial", 
         "📑 Catálogo",
         "📇 Directorio"
@@ -109,6 +110,11 @@ if menu == "📝 Ventas":
                     df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
                     conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_ventas_act, nueva_venta], ignore_index=True))
                     conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
+                    
+                    if v_input == "+ Agregar Nuevo Vendedor":
+                        df_v_act = cargar_datos("vendedores")
+                        conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=pd.concat([df_v_act, pd.DataFrame([{"nombre": v_vendedor}])], ignore_index=True))
+                        
                     st.success("¡Venta exitosa!")
                     st.cache_data.clear()
                     st.rerun()
@@ -127,22 +133,18 @@ elif menu == "📊 Detalle de Crédito":
         datos = df_v[df_v['display_name'] == u_busqueda].iloc[0]
         
         total_abonado = round(df_p[df_p['ubicacion'] == datos['ubicacion']]['monto'].sum(), 2) if not df_p.empty else 0.0
-        
         st.markdown("---")
         c_alt1, c_alt2 = st.columns([2, 1])
         with c_alt1:
             st.markdown(f"### 👤 Cliente: {datos['cliente']}")
             st.markdown(f"#### 📍 Ubicación: {datos['ubicacion']}")
-            st.write(f"🔢 **Plazo:** {int(datos['plazo_meses'])} meses")
         with c_alt2:
             monto_financiar = round(float(datos['precio_total']) - float(datos['enganche']), 2)
             saldo_real = round(monto_financiar - total_abonado, 2)
             st.metric("SALDO RESTANTE REAL", fmt_moneda(saldo_real))
-            st.metric("TOTAL ABONADO", fmt_moneda(total_abonado))
 
         st.divider()
-        st.subheader("🗓️ Estado de Cuenta de Mensualidades")
-        
+        st.subheader("🗓️ Estado de Cuenta")
         tabla = []
         f_pago = datetime.strptime(str(datos['fecha']), '%Y-%m-%d')
         saldo_teorico = monto_financiar
@@ -151,45 +153,30 @@ elif menu == "📊 Detalle de Crédito":
         for i in range(1, int(datos['plazo_meses']) + 1):
             f_pago += relativedelta(months=1)
             cuota = round(float(datos['mensualidad']), 2)
-            
             if acumulado_pagos >= cuota:
                 estatus = "✅ Pagado"
                 acumulado_pagos = round(acumulado_pagos - cuota, 2)
             elif acumulado_pagos > 0:
                 estatus = f"🔶 Parcial ({fmt_moneda(acumulado_pagos)})"
                 acumulado_pagos = 0
-            else:
-                estatus = "⏳ Pendiente"
+            else: estatus = "⏳ Pendiente"
             
             saldo_teorico = round(saldo_teorico - cuota, 2)
-            tabla.append({
-                "Mes": int(i),
-                "Vencimiento": f_pago.strftime('%d / %m / %Y'),
-                "Cuota": cuota,
-                "Saldo tras pago": max(saldo_teorico, 0),
-                "Estatus": estatus
-            })
+            tabla.append({"Mes": int(i), "Vencimiento": f_pago.strftime('%d/%m/%Y'), "Cuota": cuota, "Saldo tras pago": max(saldo_teorico, 0), "Estatus": estatus})
         
         st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True,
-                     column_config={
-                         "Cuota": st.column_config.NumberColumn(format="$ %.2f"),
-                         "Saldo tras pago": st.column_config.NumberColumn(format="$ %.2f"),
-                         "Mes": st.column_config.NumberColumn(format="%d")
-                     })
+                     column_config={"Cuota": st.column_config.NumberColumn(format="$ %.2f"), "Saldo tras pago": st.column_config.NumberColumn(format="$ %.2f"), "Mes": st.column_config.NumberColumn(format="%d")})
 
 # --- MÓDULO: COBRANZA ---
 elif menu == "💰 Cobranza":
     st.subheader("Registro de Abonos")
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
-
-    if df_v.empty:
-        st.info("No hay contratos activos.")
+    if df_v.empty: st.info("No hay contratos activos.")
     else:
         df_v['display_name'] = df_v['ubicacion'] + " | " + df_v['cliente']
         c_sel = st.selectbox("Seleccione el Contrato", options=df_v['display_name'].tolist())
         datos_v = df_v[df_v['display_name'] == c_sel].iloc[0]
-        
         pagos_hechos = round(df_p[df_p['ubicacion'] == datos_v['ubicacion']]['monto'].sum(), 2) if not df_p.empty else 0.0
         saldo_actual = round((float(datos_v['precio_total']) - float(datos_v['enganche'])) - pagos_hechos, 2)
         
@@ -210,6 +197,67 @@ elif menu == "💰 Cobranza":
                     st.success("¡Abono registrado!"); st.cache_data.clear(); st.rerun()
                 except Exception as e: st.error(e)
 
+# --- MÓDULO: COMISIONES (NUEVO) ---
+elif menu == "💸 Comisiones":
+    st.subheader("Gestión de Comisiones por Vendedor")
+    df_v = cargar_datos("ventas")
+    df_pc = cargar_datos("pagos_comisiones")
+    df_vend = cargar_datos("vendedores")
+
+    if df_v.empty:
+        st.info("No hay ventas registradas para calcular comisiones.")
+    else:
+        vendedor_sel = st.selectbox("Seleccione un Vendedor", options=df_vend["nombre"].unique())
+        
+        # Filtrar ventas y pagos de comisiones del vendedor
+        ventas_vendedor = df_v[df_v["vendedor"] == vendedor_sel]
+        pagos_realizados = df_pc[df_pc["vendedor"] == vendedor_sel]
+        
+        total_comisiones_ganadas = round(ventas_vendedor["comision"].sum(), 2)
+        total_comisiones_pagadas = round(pagos_realizados["monto"].sum(), 2)
+        saldo_comision = round(total_comisiones_ganadas - total_comisiones_pagadas, 2)
+        
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Comisiones Ganadas", fmt_moneda(total_comisiones_ganadas))
+        m2.metric("Comisiones Pagadas", fmt_moneda(total_comisiones_pagadas))
+        m3.metric("Saldo por Pagar", fmt_moneda(saldo_comision), delta_color="inverse")
+        
+        st.divider()
+        
+        col_tabla, col_pago = st.columns([2, 1])
+        
+        with col_tabla:
+            st.markdown("### 📋 Detalle de Ventas")
+            if not ventas_vendedor.empty:
+                # Mostrar qué se ha pagado de cada venta (simplificado)
+                st.dataframe(ventas_vendedor[["fecha", "ubicacion", "cliente", "comision"]], 
+                             use_container_width=True, hide_index=True,
+                             column_config={"comision": st.column_config.NumberColumn(format="$ %.2f")})
+            else:
+                st.write("No hay ventas registradas.")
+
+        with col_pago:
+            st.markdown("### 💳 Registrar Pago")
+            with st.form("pago_comision", clear_on_submit=True):
+                fecha_pc = st.date_input("Fecha de Pago", value=datetime.now())
+                monto_pc = st.number_input("Monto a Pagar ($)", min_value=0.0, max_value=float(saldo_comision) if saldo_comision > 0 else 0.01, step=100.0)
+                referencia = st.text_input("Referencia (Banco/Recibo)")
+                
+                if st.form_submit_button("Confirmar Pago"):
+                    if monto_pc > 0:
+                        nuevo_p_com = pd.DataFrame([{
+                            "fecha": fecha_pc.strftime('%Y-%m-%d'),
+                            "vendedor": vendedor_sel,
+                            "monto": round(float(monto_pc), 2),
+                            "referencia": referencia
+                        }])
+                        conn.update(spreadsheet=URL_SHEET, worksheet="pagos_comisiones", data=pd.concat([df_pc, nuevo_p_com], ignore_index=True))
+                        st.success("Pago de comisión registrado.")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error("El monto debe ser mayor a 0.")
+
 # --- MÓDULO: CATALOGO ---
 elif menu == "📑 Catálogo":
     st.subheader("Gestión de Inventario")
@@ -217,9 +265,7 @@ elif menu == "📑 Catálogo":
     if not df_cat.empty:
         df_cat["precio"] = pd.to_numeric(df_cat["precio"], errors='coerce').round(2)
         st.dataframe(df_cat[["ubicacion", "precio", "estatus"]], use_container_width=True, hide_index=True,
-                     column_config={
-                         "precio": st.column_config.NumberColumn(format="$ %.2f")
-                     })
+                     column_config={"precio": st.column_config.NumberColumn(format="$ %.2f")})
 
 # --- MÓDULO: DIRECTORIO ---
 elif menu == "📇 Directorio":
@@ -228,4 +274,4 @@ elif menu == "📇 Directorio":
     with t2: st.dataframe(cargar_datos("vendedores"), use_container_width=True, hide_index=True)
 
 st.sidebar.write("---")
-st.sidebar.success("Sistema Listo")
+st.sidebar.success("Módulo de Comisiones Activo")
