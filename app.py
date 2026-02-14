@@ -27,7 +27,7 @@ def cargar_datos(pestana):
     except:
         return pd.DataFrame()
 
-# --- BARRA LATERAL (MENÚ) ---
+# --- BARRA LATERAL ---
 st.sidebar.title("Navegación")
 menu = st.sidebar.radio(
     "Seleccione una sección:",
@@ -53,7 +53,7 @@ if menu == "🏠 Inicio":
     if not df_u.empty:
         c3.metric("Lotes Disponibles", len(df_u[df_u["estatus"] == "Disponible"]))
 
-# --- MÓDULO: VENTAS ---
+# --- MÓDULO: VENTAS (CON ID_VENTA OCULTO) ---
 elif menu == "📝 Ventas":
     st.subheader("Generación de Nuevo Contrato")
     df_ubi = cargar_datos("ubicaciones")
@@ -81,13 +81,21 @@ elif menu == "📝 Ventas":
 
         if st.button("Confirmar Venta", type="primary"):
             df_v_act = cargar_datos("ventas")
-            nueva = pd.DataFrame([{"fecha": v_fecha.strftime('%Y-%m-%d'), "ubicacion": u_sel, "cliente": c_input, "vendedor": v_input, "precio_total": round(v_precio, 2), "enganche": round(v_enganche, 2), "plazo_meses": int(v_plazo), "mensualidad": round(mensual, 2), "comision": round(v_comision, 2)}])
+            # Lógica ID_VENTA automático
+            nuevo_id_v = int(df_v_act["id_venta"].max()) + 1 if (not df_v_act.empty and "id_venta" in df_v_act.columns) else 1
+            
+            nueva = pd.DataFrame([{
+                "id_venta": nuevo_id_v, "fecha": v_fecha.strftime('%Y-%m-%d'), "ubicacion": u_sel, 
+                "cliente": c_input, "vendedor": v_input, "precio_total": round(v_precio, 2), 
+                "enganche": round(v_enganche, 2), "plazo_meses": int(v_plazo), 
+                "mensualidad": round(mensual, 2), "comision": round(v_comision, 2)
+            }])
             df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v_act, nueva], ignore_index=True))
             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
-            st.success("Venta Guardada"); st.cache_data.clear(); st.rerun()
+            st.success(f"Venta Guardada (Folio: {nuevo_id_v})"); st.cache_data.clear(); st.rerun()
 
-# --- MÓDULO: DETALLE DE CRÉDITO (RESTAURADO) ---
+# --- MÓDULO: DETALLE DE CRÉDITO ---
 elif menu == "📊 Detalle de Crédito":
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
@@ -98,47 +106,32 @@ elif menu == "📊 Detalle de Crédito":
         sel = st.selectbox("Seleccione Contrato", options=df_v['display'].tolist())
         d = df_v[df_v['display'] == sel].iloc[0]
         
-        # Cálculos de saldos
         pagado = round(df_p[df_p['ubicacion'] == d['ubicacion']]['monto'].sum(), 2) if not df_p.empty else 0.0
         m_finan = float(d['precio_total']) - float(d['enganche'])
         saldo_r = m_finan - pagado
+        porcentaje = min(pagado / m_finan, 1.0) if m_finan > 0 else 0
 
         c1, c2 = st.columns(2)
         c1.metric("Saldo Pendiente Real", fmt_moneda(saldo_r))
-        c2.metric("Total Abonado a Mensualidades", fmt_moneda(pagado))
+        c2.metric("Total Abonado", fmt_moneda(pagado))
+        st.write(f"**Progreso de Pago:** {int(porcentaje*100)}%")
+        st.progress(porcentaje)
 
-        st.subheader("📋 Tabla de Amortización Dinámica")
+        st.subheader("📋 Tabla de Amortización")
         tabla = []
-        # Intentar convertir fecha de string a objeto datetime
-        try:
-            f_venc = datetime.strptime(str(d['fecha']), '%Y-%m-%d')
-        except:
-            f_venc = datetime.now()
-            
+        try: f_venc = datetime.strptime(str(d['fecha']), '%Y-%m-%d')
+        except: f_venc = datetime.now()
         acum_pagos = pagado
         cuota_fija = round(float(d['mensualidad']), 2)
         
         for i in range(1, int(d['plazo_meses']) + 1):
             f_venc += relativedelta(months=1)
-            
-            if acum_pagos >= cuota_fija:
-                estatus = "✅ Pagado"
-                acum_pagos = round(acum_pagos - cuota_fija, 2)
-            elif acum_pagos > 0:
-                estatus = f"🔶 Parcial ({fmt_moneda(acum_pagos)})"
-                acum_pagos = 0
-            else:
-                estatus = "⏳ Pendiente"
-                
-            tabla.append({
-                "Mes": i, 
-                "Vencimiento": f_venc.strftime('%d/%b/%Y'), 
-                "Cuota Sugerida": cuota_fija, 
-                "Estatus": estatus
-            })
+            if acum_pagos >= cuota_fija: est = "✅ Pagado"; acum_pagos = round(acum_pagos - cuota_fija, 2)
+            elif acum_pagos > 0: est = f"🔶 Parcial ({fmt_moneda(acum_pagos)})"; acum_pagos = 0
+            else: est = "⏳ Pendiente"
+            tabla.append({"Mes": i, "Vencimiento": f_venc.strftime('%d/%m/%Y'), "Cuota": cuota_fija, "Estatus": est})
         
-        st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True, 
-                     column_config={"Cuota Sugerida": st.column_config.NumberColumn(format="$ %.2f")})
+        st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True, column_config={"Cuota": st.column_config.NumberColumn(format="$ %.2f")})
 
 # --- MÓDULO: COBRANZA ---
 elif menu == "💰 Cobranza":
@@ -172,7 +165,7 @@ elif menu == "💸 Comisiones":
             if st.form_submit_button("Pagar"):
                 nuevo = pd.DataFrame([{"fecha": datetime.now().strftime('%Y-%m-%d'), "vendedor": v_sel, "monto": round(m_pago, 2)}])
                 conn.update(spreadsheet=URL_SHEET, worksheet="pagos_comisiones", data=pd.concat([df_pc, nuevo], ignore_index=True))
-                st.success("Pagado"); st.cache_data.clear(); st.rerun()
+                st.success("Comisión Pagada"); st.cache_data.clear(); st.rerun()
 
 # --- MÓDULO: CATALOGO ---
 elif menu == "📑 Catálogo":
