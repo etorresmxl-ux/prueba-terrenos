@@ -76,28 +76,69 @@ elif menu == "📝 Ventas":
             v_enganche = st.number_input("Enganche ($)", min_value=0.0)
             v_plazo = st.number_input("Plazo (Meses)", min_value=1, value=48)
             v_comision = st.number_input("Comisión ($)", min_value=0.0)
-            mensual = round((v_precio - v_enganche) / v_plazo, 2)
+            mensual = round((v_precio - v_enganche) / v_plazo, 2) if v_plazo > 0 else 0
             st.metric("Mensualidad", fmt_moneda(mensual))
 
         if st.button("Confirmar Venta", type="primary"):
             df_v_act = cargar_datos("ventas")
-            nueva = pd.DataFrame([{"fecha": v_fecha.strftime('%Y-%m-%d'), "ubicacion": u_sel, "cliente": c_input, "vendedor": v_input, "precio_total": v_precio, "enganche": v_enganche, "plazo_meses": v_plazo, "mensualidad": mensual, "comision": v_comision}])
+            nueva = pd.DataFrame([{"fecha": v_fecha.strftime('%Y-%m-%d'), "ubicacion": u_sel, "cliente": c_input, "vendedor": v_input, "precio_total": round(v_precio, 2), "enganche": round(v_enganche, 2), "plazo_meses": int(v_plazo), "mensualidad": round(mensual, 2), "comision": round(v_comision, 2)}])
             df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v_act, nueva], ignore_index=True))
             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
             st.success("Venta Guardada"); st.cache_data.clear(); st.rerun()
 
-# --- MÓDULO: DETALLE DE CRÉDITO ---
+# --- MÓDULO: DETALLE DE CRÉDITO (RESTAURADO) ---
 elif menu == "📊 Detalle de Crédito":
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
-    if not df_v.empty:
+    if df_v.empty: 
+        st.warning("No hay ventas registradas.")
+    else:
         df_v['display'] = df_v['ubicacion'] + " | " + df_v['cliente']
         sel = st.selectbox("Seleccione Contrato", options=df_v['display'].tolist())
         d = df_v[df_v['display'] == sel].iloc[0]
+        
+        # Cálculos de saldos
         pagado = round(df_p[df_p['ubicacion'] == d['ubicacion']]['monto'].sum(), 2) if not df_p.empty else 0.0
-        st.metric("Saldo Restante", fmt_moneda(float(d['precio_total']) - float(d['enganche']) - pagado))
-        # (Lógica de tabla de mensualidades omitida para espacio, se mantiene igual en tu versión)
+        m_finan = float(d['precio_total']) - float(d['enganche'])
+        saldo_r = m_finan - pagado
+
+        c1, c2 = st.columns(2)
+        c1.metric("Saldo Pendiente Real", fmt_moneda(saldo_r))
+        c2.metric("Total Abonado a Mensualidades", fmt_moneda(pagado))
+
+        st.subheader("📋 Tabla de Amortización Dinámica")
+        tabla = []
+        # Intentar convertir fecha de string a objeto datetime
+        try:
+            f_venc = datetime.strptime(str(d['fecha']), '%Y-%m-%d')
+        except:
+            f_venc = datetime.now()
+            
+        acum_pagos = pagado
+        cuota_fija = round(float(d['mensualidad']), 2)
+        
+        for i in range(1, int(d['plazo_meses']) + 1):
+            f_venc += relativedelta(months=1)
+            
+            if acum_pagos >= cuota_fija:
+                estatus = "✅ Pagado"
+                acum_pagos = round(acum_pagos - cuota_fija, 2)
+            elif acum_pagos > 0:
+                estatus = f"🔶 Parcial ({fmt_moneda(acum_pagos)})"
+                acum_pagos = 0
+            else:
+                estatus = "⏳ Pendiente"
+                
+            tabla.append({
+                "Mes": i, 
+                "Vencimiento": f_venc.strftime('%d/%b/%Y'), 
+                "Cuota Sugerida": cuota_fija, 
+                "Estatus": estatus
+            })
+        
+        st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True, 
+                     column_config={"Cuota Sugerida": st.column_config.NumberColumn(format="$ %.2f")})
 
 # --- MÓDULO: COBRANZA ---
 elif menu == "💰 Cobranza":
@@ -143,12 +184,11 @@ elif menu == "📑 Catálogo":
         cols = [c for c in ["ubicacion", "precio", "estatus"] if c in df_cat.columns]
         st.dataframe(df_cat[cols].style.apply(estilo_disponible, axis=1), hide_index=True, use_container_width=True, column_config={"precio": st.column_config.NumberColumn(format="$ %.2f")})
 
-# --- MÓDULO: DIRECTORIO (CON ID AUTOMÁTICO OCULTO) ---
+# --- MÓDULO: DIRECTORIO ---
 elif menu == "📇 Directorio":
     tipo = st.radio("Seleccione Directorio", ["Clientes", "Vendedores"], horizontal=True)
     pestana = "clientes" if tipo == "Clientes" else "vendedores"
     col_id = "id_cliente" if tipo == "Clientes" else "id_vendedor"
-    
     df_dir = cargar_datos(pestana)
     
     with st.expander(f"➕ Registrar Nuevo {tipo[:-1]}"):
@@ -156,23 +196,16 @@ elif menu == "📇 Directorio":
             f_nom = st.text_input("Nombre Completo")
             f_tel = st.text_input("Teléfono")
             f_cor = st.text_input("Correo Electrónico")
-            
-            if st.form_submit_button("Guardar Registro"):
+            if st.form_submit_button("Guardar"):
                 if f_nom:
-                    # Lógica de ID automático en secuencia
-                    if not df_dir.empty and col_id in df_dir.columns:
-                        nuevo_id = int(df_dir[col_id].max()) + 1
-                    else:
-                        nuevo_id = 1
-                    
+                    nuevo_id = int(df_dir[col_id].max()) + 1 if (not df_dir.empty and col_id in df_dir.columns) else 1
                     nuevo_reg = pd.DataFrame([{col_id: nuevo_id, "nombre": f_nom, "telefono": f_tel, "correo": f_cor}])
                     conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=pd.concat([df_dir, nuevo_reg], ignore_index=True))
                     st.success(f"Registrado con ID: {nuevo_id}"); st.cache_data.clear(); st.rerun()
-                else: st.error("El nombre es obligatorio")
+                else: st.error("Nombre obligatorio")
 
-    st.write(f"### Listado de {tipo}")
+    st.write(f"### Lista de {tipo}")
     if not df_dir.empty:
-        # Ocultamos el ID en la vista pero mantenemos Nombre, Telefono y Correo
         vistas = [c for c in ["nombre", "telefono", "correo"] if c in df_dir.columns]
         st.dataframe(df_dir[vistas], use_container_width=True, hide_index=True)
 
