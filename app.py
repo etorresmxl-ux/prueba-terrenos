@@ -82,7 +82,7 @@ if menu == "📑 Catálogo":
                 "ubicacion": "Ubicación",
                 "precio": st.column_config.NumberColumn(
                     "Precio de Venta",
-                    format="$ %.2f"
+                    format="$ %,.2f"
                 ),
                 "estatus": "Estatus"
             }
@@ -165,3 +165,4 @@ elif menu == "📈 Comisiones": st.info("Cálculo de comisiones.")
 
 st.sidebar.write("---")
 st.sidebar.success("Conectado a Google Sheets")
+
