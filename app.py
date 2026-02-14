@@ -200,7 +200,7 @@ elif menu == "📑 Catálogo":
     if not df_cat.empty:
         # Función para aplicar el color amarillo a las filas con estatus 'Disponible'
         def resaltar_disponibles(row):
-            return ['background-color: yellow' if row.estatus == 'Disponible' else '' for _ in row]
+            return ['background-color: orange' if row.estatus == 'Disponible' else '' for _ in row]
 
         # Aplicamos el estilo al dataframe antes de mostrarlo
         df_estilizado = df_cat.style.apply(resaltar_disponibles, axis=1)
@@ -227,4 +227,5 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
