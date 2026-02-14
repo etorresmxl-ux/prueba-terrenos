@@ -27,7 +27,8 @@ if st.sidebar.button("🔄 Actualizar Base de Datos"):
 # --- FUNCIONES DE APOYO ---
 def cargar_datos(pestana):
     try:
-        return conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
+        df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
+        return df
     except Exception:
         return pd.DataFrame()
 
@@ -69,11 +70,11 @@ if menu == "📑 Catálogo":
 
     st.divider()
 
-    # --- TABLA DE UBICACIONES PULIDA ---
     df_cat = cargar_datos("ubicaciones")
     if not df_cat.empty:
-        # 1. Seleccionamos solo las columnas que queremos mostrar
-        # 2. Configuramos el formato de moneda para la columna 'precio'
+        # LIMPIEZA MÁGICA: Convertimos a número para evitar el error de formato
+        df_cat["precio"] = pd.to_numeric(df_cat["precio"], errors='coerce')
+        
         st.dataframe(
             df_cat[["ubicacion", "precio", "estatus"]], 
             use_container_width=True, 
@@ -101,7 +102,6 @@ elif menu == "📝 Ventas":
         col1, col2 = st.columns(2)
         with col1:
             if not df_ubi.empty:
-                # Usamos directamente la columna 'ubicacion' que ya tiene el formato M-L
                 opciones_ubi = df_ubi[df_ubi['estatus'] == 'Disponible']['ubicacion'].tolist()
             else:
                 opciones_ubi = ["No hay ubicaciones"]
@@ -138,7 +138,10 @@ elif menu == "📇 Directorio":
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e: st.error(e)
-        st.dataframe(cargar_datos("clientes")[["nombre", "telefono"]], use_container_width=True, hide_index=True)
+        
+        df_display_c = cargar_datos("clientes")
+        if not df_display_c.empty:
+            st.dataframe(df_display_c[["nombre", "telefono"]], use_container_width=True, hide_index=True)
 
     with tab_v:
         with st.expander("➕ Registrar Vendedor"):
@@ -154,16 +157,17 @@ elif menu == "📇 Directorio":
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e: st.error(e)
-        st.dataframe(cargar_datos("vendedores")[["nombre"]], use_container_width=True, hide_index=True)
+        
+        df_display_v = cargar_datos("vendedores")
+        if not df_display_v.empty:
+            st.dataframe(df_display_v[["nombre"]], use_container_width=True, hide_index=True)
 
-# (Secciones de relleno para mantener el menú)
-elif menu == "🏠 Inicio": st.info("Panel de control.")
-elif menu == "💰 Cobranza": st.subheader("Registro de Pagos")
-elif menu == "📅 Historial de Pagos": st.dataframe(cargar_datos("pagos"), use_container_width=True)
-elif menu == "📂 Gestión de Contratos": st.info("Módulo de contratos.")
-elif menu == "📈 Comisiones": st.info("Cálculo de comisiones.")
+# Módulos restantes (por definir lógica)
+elif menu == "🏠 Inicio": st.info("Resumen general de la inmobiliaria.")
+elif menu == "💰 Cobranza": st.subheader("Gestión de Cobranza")
+elif menu == "📅 Historial de Pagos": st.subheader("Historial General")
+elif menu == "📂 Gestión de Contratos": st.info("Administración de documentos.")
+elif menu == "📈 Comisiones": st.info("Reporte de pagos a vendedores.")
 
 st.sidebar.write("---")
 st.sidebar.success("Conectado a Google Sheets")
-
-
