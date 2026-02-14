@@ -11,6 +11,13 @@ st.set_page_config(page_title="Inmobiliaria Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/edit#gid=0"
 
+# --- FUNCIÓN PARA FORMATO DE MONEDA ---
+def fmt_moneda(valor):
+    try:
+        return f"${float(valor):,.2f}"
+    except:
+        return "$0.00"
+
 # --- FUNCIONES DE APOYO ---
 def cargar_datos(pestana):
     try:
@@ -74,7 +81,10 @@ if menu == "📝 Ventas":
             v_fecha = st.date_input("Fecha de Contrato", value=datetime.now())
 
         with col2:
-            precio_sugerido = float(df_ubi[df_ubi['ubicacion'] == u_sel]['precio'].values[0])
+            # Obtener precio sugerido
+            fila_ubi = df_ubi[df_ubi['ubicacion'] == u_sel]
+            precio_sugerido = float(fila_ubi['precio'].values[0]) if not fila_ubi.empty else 0.0
+            
             v_precio = st.number_input("Precio de Venta Final ($)", value=precio_sugerido, step=1000.0)
             v_enganche = st.number_input("Enganche ($)", min_value=0.0, step=1000.0)
             v_plazo = st.number_input("Plazo (Meses)", min_value=1, value=48, step=1)
@@ -84,8 +94,10 @@ if menu == "📝 Ventas":
             mensualidad = saldo_a_financiar / v_plazo if v_plazo > 0 else 0
             
             st.markdown("---")
-            st.metric("Saldo a Financiar", f"$ {saldo_a_financiar:,.2f}")
-            st.metric("Mensualidad Calculada", f"$ {mensualidad:,.2f}")
+            st.metric("Saldo a Financiar", fmt_moneda(saldo_a_financiar))
+            st.metric("Mensualidad Calculada", fmt_moneda(mensualidad))
+
+        v_obs = st.text_area("Observaciones del contrato")
 
         if st.button("Confirmar Venta y Generar Contrato", type="primary"):
             try:
@@ -98,10 +110,11 @@ if menu == "📝 Ventas":
                         "vendedor": v_vendedor,
                         "precio_total": v_precio,
                         "enganche": v_enganche,
-                        "plazo_meses": v_plazo,
+                        "plazo_meses": int(v_plazo),
                         "mensualidad": mensualidad,
                         "comision": v_comision,
-                        "estatus_pago": "Activo"
+                        "estatus_pago": "Activo",
+                        "observaciones": v_obs
                     }])
                     
                     df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
@@ -112,6 +125,10 @@ if menu == "📝 Ventas":
                         df_c_act = cargar_datos("clientes")
                         conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_c_act, pd.DataFrame([{"nombre": v_cliente}])], ignore_index=True))
                     
+                    if v_input == "+ Agregar Nuevo Vendedor":
+                        df_v_act = cargar_datos("vendedores")
+                        conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=pd.concat([df_v_act, pd.DataFrame([{"nombre": v_vendedor}])], ignore_index=True))
+
                     st.success("¡Venta exitosa!")
                     st.balloons()
                     st.cache_data.clear()
@@ -125,22 +142,23 @@ elif menu == "📊 Detalle de Crédito":
     if df_v.empty:
         st.warning("No hay ventas registradas.")
     else:
-        # Buscador mejorado: Ubicación | Cliente
         df_v['display_name'] = df_v['ubicacion'] + " | " + df_v['cliente']
         u_busqueda = st.selectbox("Seleccione Contrato", options=df_v['display_name'].tolist())
         datos = df_v[df_v['display_name'] == u_busqueda].iloc[0]
         
         st.markdown("---")
-        # Visualización en grande
         c_alt1, c_alt2 = st.columns([2, 1])
         with c_alt1:
             st.markdown(f"### 👤 Cliente: {datos['cliente']}")
             st.markdown(f"#### 📍 Ubicación: {datos['ubicacion']}")
             st.write(f"📅 **Fecha de Contrato:** {datos['fecha']}")
-            st.write(f"💰 **Precio de Venta:** ${float(datos['precio_total']):,.2f}")
+            st.write(f"💰 **Precio de Venta:** {fmt_moneda(datos['precio_total'])}")
+            st.write(f"💵 **Enganche:** {fmt_moneda(datos['enganche'])}")
+            st.write(f"🔢 **Plazo:** {int(datos['plazo_meses'])} meses")
         with c_alt2:
-            st.metric("SALDO RESTANTE", f"${float(datos['precio_total']) - float(datos['enganche']):,.2f}")
-            st.metric("MENSUALIDAD", f"${float(datos['mensualidad']):,.2f}")
+            saldo_r = float(datos['precio_total']) - float(datos['enganche'])
+            st.metric("SALDO RESTANTE", fmt_moneda(saldo_r))
+            st.metric("MENSUALIDAD", fmt_moneda(datos['mensualidad']))
 
         st.divider()
         st.subheader("🗓️ Tabla de Amortización Proyectada")
@@ -153,7 +171,7 @@ elif menu == "📊 Detalle de Crédito":
             f_pago += relativedelta(months=1)
             s_restante -= float(datos['mensualidad'])
             tabla.append({
-                "Mes": i,
+                "Mes": int(i),
                 "Vencimiento": f_pago.strftime('%d / %m / %Y'),
                 "Monto Cuota": datos['mensualidad'],
                 "Saldo tras el pago": max(s_restante, 0),
@@ -163,7 +181,8 @@ elif menu == "📊 Detalle de Crédito":
         st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True,
                      column_config={
                          "Monto Cuota": st.column_config.NumberColumn(format="$%,.2f"),
-                         "Saldo tras el pago": st.column_config.NumberColumn(format="$%,.2f")
+                         "Saldo tras el pago": st.column_config.NumberColumn(format="$%,.2f"),
+                         "Mes": st.column_config.NumberColumn(format="%d")
                      })
 
 # --- MÓDULO: CATALOGO ---
@@ -172,9 +191,9 @@ elif menu == "📑 Catálogo":
     with st.expander("➕ Agregar Nueva Ubicación"):
         with st.form("nuevo_lote"):
             ca, cb, cc = st.columns(3)
-            m = ca.number_input("Manzana", min_value=1)
-            l = cb.number_input("Lote", min_value=1)
-            p = cc.number_input("Precio ($)", min_value=0.0)
+            m = ca.number_input("Manzana", min_value=1, step=1)
+            l = cb.number_input("Lote", min_value=1, step=1)
+            p = cc.number_input("Precio ($)", min_value=0.0, step=1000.0)
             if st.form_submit_button("Registrar"):
                 df_c = cargar_datos("ubicaciones")
                 nuevo = pd.DataFrame([{"ubicacion": f"M{m}-L{l}", "manzana": m, "lote": l, "precio": p, "estatus": "Disponible"}])
@@ -185,15 +204,27 @@ elif menu == "📑 Catálogo":
 
     df_cat = cargar_datos("ubicaciones")
     if not df_cat.empty:
-        st.dataframe(df_cat[["ubicacion", "precio", "estatus"]], use_container_width=True, hide_index=True)
+        st.dataframe(
+            df_cat[["ubicacion", "precio", "estatus"]], 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "precio": st.column_config.NumberColumn(format="$%,.2f")
+            }
+        )
 
 # --- MÓDULO: DIRECTORIO ---
 elif menu == "📇 Directorio":
     t1, t2 = st.tabs(["Clientes", "Vendedores"])
-    with t1: st.dataframe(cargar_datos("clientes"), use_container_width=True, hide_index=True)
-    with t2: st.dataframe(cargar_datos("vendedores"), use_container_width=True, hide_index=True)
+    with t1: 
+        st.dataframe(cargar_datos("clientes"), use_container_width=True, hide_index=True)
+    with t2: 
+        st.dataframe(cargar_datos("vendedores"), use_container_width=True, hide_index=True)
 
-# Otros módulos (Estructura base)
-elif menu == "🏠 Inicio": st.info("Panel General")
-elif menu == "💰 Cobranza": st.info("Módulo de Cobranza en desarrollo")
-elif menu == "📅 Historial": st.info("Historial de movimientos")
+# Módulos restantes
+elif menu == "🏠 Inicio": st.info("Panel General de la Inmobiliaria")
+elif menu == "💰 Cobranza": st.info("Módulo de Cobranza - Próximamente")
+elif menu == "📅 Historial": st.info("Historial de movimientos y pagos")
+
+st.sidebar.write("---")
+st.sidebar.success("Sistema Conectado y Operativo")
