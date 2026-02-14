@@ -1,59 +1,39 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
-import pandas as pd
 
-# CONFIGURACIÓN DE LA APP
-st.set_page_config(page_title="Gestión Inmobiliaria Pro", layout="wide")
+# 1. Configuración básica
+st.set_page_config(page_title="Inmobiliaria", layout="wide")
 
-# CONEXIÓN SEGURA
-# Nota: No pasamos 'creds' aquí porque Streamlit los lee de los Secrets automáticamente
-try:
-    conn = st.connection("gsheets", type=GSheetsConnection)
-except Exception as e:
-    st.error(f"Error de conexión: {e}")
-    st.stop()
+# 2. Conexión automática (Streamlit busca solito los [connections.gsheets] que guardaste)
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# LINK DE TU HOJA (Cámbialo por el tuyo)
+# 3. PEGA AQUÍ TU LINK DE GOOGLE SHEETS
+# Asegúrate de que termine en /edit o algo similar
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/"
 
-# INTERFAZ PRINCIPAL
 st.title("🏡 Sistema de Gestión Inmobiliaria")
 
-menu = st.sidebar.selectbox("Seleccione una opción:", 
-    ["📊 Resumen General", "📍 Inventario de Terrenos", "👤 Gestión de Clientes", "💰 Abonos y Pagos"])
+# Botón para forzar la actualización de datos
+if st.sidebar.button("🔄 Refrescar Datos"):
+    st.cache_data.clear()
+    st.rerun()
 
-# --- SECCIÓN: INVENTARIO ---
-if menu == "📍 Inventario de Terrenos":
-    st.header("Inventario de Lotes")
-    try:
-        df_lotes = conn.read(spreadsheet=URL_SHEET, worksheet="terrenos")
-        st.dataframe(df_lotes, use_container_width=True)
-        
-        with st.expander("➕ Agregar nuevo lote"):
-            with st.form("nuevo_lote"):
-                mz = st.text_input("Manzana")
-                lt = st.text_input("Lote")
-                precio = st.number_input("Precio de venta", min_value=0)
-                if st.form_submit_button("Guardar en Drive"):
-                    st.info("Función de guardado lista para programar en el siguiente paso.")
-    except Exception as e:
-        st.error(f"Error al leer 'terrenos': {e}")
+try:
+    # 4. Intentamos leer la pestaña 'terrenos'
+    # Si tu pestaña tiene otro nombre (ej. Sheet1), cámbialo aquí abajo
+    df = conn.read(spreadsheet=URL_SHEET, worksheet="terrenos")
+    
+    st.success("✅ ¡Conexión Exitosa con Google Sheets!")
+    st.write("### Vista de Terrenos")
+    st.dataframe(df, use_container_width=True)
 
-# --- SECCIÓN: CLIENTES ---
-elif menu == "👤 Gestión de Clientes":
-    st.header("Directorio de Clientes")
-    try:
-        df_clientes = conn.read(spreadsheet=URL_SHEET, worksheet="clientes")
-        st.dataframe(df_clientes, use_container_width=True)
-    except Exception as e:
-        st.error(f"Error al leer 'clientes': {e}")
-
-# --- SECCIÓN: ABONOS (LO QUE VIENE) ---
-elif menu == "💰 Abonos y Pagos":
-    st.header("Control de Pagos y Comisiones")
-    st.info("Aquí registraremos los abonos mensuales y calcularemos las comisiones de los vendedores.")
-
-else:
-    st.subheader("Bienvenido al sistema")
-    st.write("Selecciona una opción en el menú de la izquierda para comenzar.")
-
+except Exception as e:
+    st.error("❌ No se pudieron cargar los datos.")
+    st.info("Cosas a revisar:")
+    st.markdown("""
+    1. ¿Compartiste el Excel con el correo `inmobiliaria-2026@agile-terra-487416-e3.iam.gserviceaccount.com`?
+    2. ¿La pestaña se llama exactamente **terrenos**?
+    3. ¿El link de la URL es el correcto?
+    """)
+    # Esto te mostrará el error técnico si algo falla
+    st.exception(e)
