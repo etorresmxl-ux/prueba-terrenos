@@ -53,7 +53,7 @@ if menu == "🏠 Inicio":
     if not df_u.empty:
         c3.metric("Lotes Disponibles", len(df_u[df_u["estatus"] == "Disponible"]))
 
-# --- MÓDULO: VENTAS (CON ID_VENTA OCULTO) ---
+# --- MÓDULO: VENTAS (CON COMENTARIOS) ---
 elif menu == "📝 Ventas":
     st.subheader("Generación de Nuevo Contrato")
     df_ubi = cargar_datos("ubicaciones")
@@ -78,17 +78,20 @@ elif menu == "📝 Ventas":
             v_comision = st.number_input("Comisión ($)", min_value=0.0)
             mensual = round((v_precio - v_enganche) / v_plazo, 2) if v_plazo > 0 else 0
             st.metric("Mensualidad", fmt_moneda(mensual))
+        
+        # Nueva sección de comentarios
+        v_comentarios = st.text_area("Comentarios o referencias adicionales", placeholder="Ej: Pago de enganche vía transferencia, cliente solicita factura...")
 
         if st.button("Confirmar Venta", type="primary"):
             df_v_act = cargar_datos("ventas")
-            # Lógica ID_VENTA automático
             nuevo_id_v = int(df_v_act["id_venta"].max()) + 1 if (not df_v_act.empty and "id_venta" in df_v_act.columns) else 1
             
             nueva = pd.DataFrame([{
                 "id_venta": nuevo_id_v, "fecha": v_fecha.strftime('%Y-%m-%d'), "ubicacion": u_sel, 
                 "cliente": c_input, "vendedor": v_input, "precio_total": round(v_precio, 2), 
                 "enganche": round(v_enganche, 2), "plazo_meses": int(v_plazo), 
-                "mensualidad": round(mensual, 2), "comision": round(v_comision, 2)
+                "mensualidad": round(mensual, 2), "comision": round(v_comision, 2),
+                "comentarios": v_comentarios # Guardamos el comentario
             }])
             df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v_act, nueva], ignore_index=True))
@@ -116,6 +119,10 @@ elif menu == "📊 Detalle de Crédito":
         c2.metric("Total Abonado", fmt_moneda(pagado))
         st.write(f"**Progreso de Pago:** {int(porcentaje*100)}%")
         st.progress(porcentaje)
+        
+        # Mostrar comentario guardado si existe
+        if "comentarios" in d and pd.notna(d['comentarios']) and d['comentarios'] != "":
+            st.info(f"**Notas del contrato:** {d['comentarios']}")
 
         st.subheader("📋 Tabla de Amortización")
         tabla = []
