@@ -53,7 +53,7 @@ if menu == "🏠 Inicio":
     if not df_u.empty:
         c3.metric("Lotes Disponibles", len(df_u[df_u["estatus"] == "Disponible"]))
 
-# --- MÓDULO: VENTAS (CON REGISTRO EXPRESS DE CLIENTES/VENDEDORES) ---
+# --- MÓDULO: VENTAS (REGISTRO SIMPLIFICADO) ---
 elif menu == "📝 Ventas":
     st.subheader("Generación de Nuevo Contrato")
     df_ubi = cargar_datos("ubicaciones")
@@ -69,23 +69,19 @@ elif menu == "📝 Ventas":
         with col1:
             u_sel = st.selectbox("Seleccione la Ubicación", options=lista_ubi)
             
-            # --- Lógica para Clientes ---
+            # --- Clientes (Solo Nombre) ---
             opciones_cli = ["+ Agregar Nuevo Cliente"] + (df_cli["nombre"].tolist() if not df_cli.empty else [])
             c_sel = st.selectbox("Cliente", options=opciones_cli)
             if c_sel == "+ Agregar Nuevo Cliente":
                 c_nombre = st.text_input("Nombre del Nuevo Cliente")
-                c_tel = st.text_input("Teléfono del Cliente")
-                c_cor = st.text_input("Correo del Cliente")
             else:
                 c_nombre = c_sel
 
-            # --- Lógica para Vendedores ---
+            # --- Vendedores (Solo Nombre) ---
             opciones_ven = ["+ Agregar Nuevo Vendedor"] + (df_ven["nombre"].tolist() if not df_ven.empty else [])
             v_sel = st.selectbox("Vendedor", options=opciones_ven)
             if v_sel == "+ Agregar Nuevo Vendedor":
                 vn_nombre = st.text_input("Nombre del Nuevo Vendedor")
-                vn_tel = st.text_input("Teléfono del Vendedor")
-                vn_cor = st.text_input("Correo del Vendedor")
             else:
                 vn_nombre = v_sel
 
@@ -100,20 +96,20 @@ elif menu == "📝 Ventas":
             mensual = round((v_precio - v_enganche) / v_plazo, 2) if v_plazo > 0 else 0
             st.metric("Mensualidad", fmt_moneda(mensual))
         
-        v_comentarios = st.text_area("Comentarios o referencias")
+        v_comentarios = st.text_area("Comentarios o referencias adicionales")
 
         if st.button("Confirmar Venta", type="primary"):
             try:
-                # 1. Registrar Cliente si es nuevo
+                # 1. Registrar Cliente nuevo (ID auto + nombre, otros campos vacíos)
                 if c_sel == "+ Agregar Nuevo Cliente" and c_nombre:
                     new_id_c = int(df_cli["id_cliente"].max()) + 1 if (not df_cli.empty and "id_cliente" in df_cli.columns) else 1
-                    df_new_c = pd.DataFrame([{"id_cliente": new_id_c, "nombre": c_nombre, "telefono": c_tel, "correo": c_cor}])
+                    df_new_c = pd.DataFrame([{"id_cliente": new_id_c, "nombre": c_nombre, "telefono": "", "correo": ""}])
                     conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cli, df_new_c], ignore_index=True))
                 
-                # 2. Registrar Vendedor si es nuevo
+                # 2. Registrar Vendedor nuevo (ID auto + nombre, otros campos vacíos)
                 if v_sel == "+ Agregar Nuevo Vendedor" and vn_nombre:
                     new_id_vnd = int(df_ven["id_vendedor"].max()) + 1 if (not df_ven.empty and "id_vendedor" in df_ven.columns) else 1
-                    df_new_v = pd.DataFrame([{"id_vendedor": new_id_vnd, "nombre": vn_nombre, "telefono": vn_tel, "correo": vn_cor}])
+                    df_new_v = pd.DataFrame([{"id_vendedor": new_id_vnd, "nombre": vn_nombre, "telefono": "", "correo": ""}])
                     conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=pd.concat([df_ven, df_new_v], ignore_index=True))
 
                 # 3. Registrar la Venta
@@ -128,17 +124,17 @@ elif menu == "📝 Ventas":
                     "comentarios": v_comentarios
                 }])
                 
-                # 4. Actualizar Catálogo
+                # 4. Actualizar Estatus Ubicación
                 df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
                 
                 conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v_act, nueva_v], ignore_index=True))
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
                 
-                st.success(f"Venta y registros procesados con éxito. Folio: {nuevo_id_v}")
+                st.success(f"¡Venta registrada! Folio: {nuevo_id_v}. Puede completar los datos de contacto en el Directorio.")
                 st.cache_data.clear()
                 st.rerun()
             except Exception as e:
-                st.error(f"Error al guardar: {e}")
+                st.error(f"Error al procesar la venta: {e}")
 
 # --- MÓDULO: DETALLE DE CRÉDITO ---
 elif menu == "📊 Detalle de Crédito":
@@ -163,7 +159,7 @@ elif menu == "📊 Detalle de Crédito":
         st.progress(porcentaje)
         
         if "comentarios" in d and pd.notna(d['comentarios']) and d['comentarios'] != "":
-            st.info(f"**Notas:** {d['comentarios']}")
+            st.info(f"**Notas del contrato:** {d['comentarios']}")
 
         st.subheader("📋 Tabla de Amortización")
         tabla = []
@@ -225,25 +221,33 @@ elif menu == "📑 Catálogo":
         cols = [c for c in ["ubicacion", "precio", "estatus"] if c in df_cat.columns]
         st.dataframe(df_cat[cols].style.apply(estilo_disponible, axis=1), hide_index=True, use_container_width=True, column_config={"precio": st.column_config.NumberColumn(format="$ %.2f")})
 
-# --- MÓDULO: DIRECTORIO ---
+# --- MÓDULO: DIRECTORIO (GESTIÓN COMPLETA) ---
 elif menu == "📇 Directorio":
     tipo = st.radio("Seleccione Directorio", ["Clientes", "Vendedores"], horizontal=True)
     pestana = "clientes" if tipo == "Clientes" else "vendedores"
     col_id = "id_cliente" if tipo == "Clientes" else "id_vendedor"
     df_dir = cargar_datos(pestana)
     
-    with st.expander(f"➕ Registrar Nuevo {tipo[:-1]}"):
+    with st.expander(f"➕ Registrar / Editar {tipo[:-1]}"):
+        st.info("Para editar teléfono o correo de un registro existente, ingrese el mismo nombre.")
         with st.form("form_dir", clear_on_submit=True):
             f_nom = st.text_input("Nombre Completo")
             f_tel = st.text_input("Teléfono")
             f_cor = st.text_input("Correo Electrónico")
-            if st.form_submit_button("Guardar"):
+            if st.form_submit_button("Guardar en Directorio"):
                 if f_nom:
-                    nuevo_id = int(df_dir[col_id].max()) + 1 if (not df_dir.empty and col_id in df_dir.columns) else 1
-                    nuevo_reg = pd.DataFrame([{col_id: nuevo_id, "nombre": f_nom, "telefono": f_tel, "correo": f_cor}])
-                    conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=pd.concat([df_dir, nuevo_reg], ignore_index=True))
-                    st.success(f"Registrado con ID: {nuevo_id}"); st.cache_data.clear(); st.rerun()
-                else: st.error("Nombre obligatorio")
+                    # Si el nombre ya existe, lo actualizamos; si no, creamos nuevo ID
+                    if not df_dir.empty and f_nom in df_dir["nombre"].values:
+                        df_dir.loc[df_dir["nombre"] == f_nom, ["telefono", "correo"]] = [f_tel, f_cor]
+                        conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=df_dir)
+                        st.success("Datos actualizados.")
+                    else:
+                        nuevo_id = int(df_dir[col_id].max()) + 1 if (not df_dir.empty and col_id in df_dir.columns) else 1
+                        nuevo_reg = pd.DataFrame([{col_id: nuevo_id, "nombre": f_nom, "telefono": f_tel, "correo": f_cor}])
+                        conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=pd.concat([df_dir, nuevo_reg], ignore_index=True))
+                        st.success(f"Nuevo {tipo[:-1]} registrado."); 
+                    st.cache_data.clear(); st.rerun()
+                else: st.error("El nombre es obligatorio")
 
     st.write(f"### Lista de {tipo}")
     if not df_dir.empty:
