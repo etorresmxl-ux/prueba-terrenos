@@ -11,7 +11,7 @@ st.set_page_config(page_title="Inmobiliaria Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/edit#gid=0"
 
-# --- FUNCIÓN PARA FORMATO DE MONEDA ---
+# --- FUNCIÓN PARA FORMATO DE MONEDA EN TEXTO ---
 def fmt_moneda(valor):
     try:
         return f"$ {float(valor):,.2f}"
@@ -41,8 +41,26 @@ if st.sidebar.button("🔄 Actualizar Base de Datos"):
 
 st.title(f"Sistema Inmobiliario - {menu[2:]}")
 
+# --- MÓDULO: INICIO ---
+if menu == "🏠 Inicio":
+    st.subheader("Resumen General")
+    df_v = cargar_datos("ventas")
+    df_u = cargar_datos("ubicaciones")
+    
+    c1, c2, c3 = st.columns(3)
+    if not df_v.empty:
+        total_v = df_v["precio_total"].sum()
+        c1.metric("Ventas Totales", fmt_moneda(total_v))
+        c2.metric("Contratos Activos", len(df_v))
+    
+    if not df_u.empty:
+        dispo = len(df_u[df_u["estatus"] == "Disponible"])
+        c3.metric("Lotes Disponibles", dispo)
+    
+    st.info("Utilice el menú lateral para gestionar la operación.")
+
 # --- MÓDULO: VENTAS ---
-if menu == "📝 Ventas":
+elif menu == "📝 Ventas":
     st.subheader("Generación de Nuevo Contrato")
     df_ubi = cargar_datos("ubicaciones")
     df_cli = cargar_datos("clientes")
@@ -54,11 +72,12 @@ if menu == "📝 Ventas":
     else: lista_ubi = []
 
     if not lista_ubi:
-        st.warning("No hay ubicaciones disponibles.")
+        st.warning("No hay ubicaciones disponibles en el catálogo.")
     else:
         col1, col2 = st.columns(2)
         with col1:
             u_sel = st.selectbox("Seleccione la Ubicación", options=lista_ubi)
+            
             lista_clientes = ["+ Agregar Nuevo Cliente"] + (df_cli["nombre"].tolist() if not df_cli.empty else [])
             c_input = st.selectbox("Nombre del Cliente", options=lista_clientes)
             v_cliente = st.text_input("Nuevo Cliente") if c_input == "+ Agregar Nuevo Cliente" else c_input
@@ -66,7 +85,7 @@ if menu == "📝 Ventas":
             lista_vendedores = ["+ Agregar Nuevo Vendedor"] + (df_ven["nombre"].tolist() if not df_ven.empty else [])
             v_input = st.selectbox("Vendedor", options=lista_vendedores)
             v_vendedor = st.text_input("Nuevo Vendedor") if v_input == "+ Agregar Nuevo Vendedor" else v_input
-            v_fecha = st.date_input("Fecha", value=datetime.now())
+            v_fecha = st.date_input("Fecha de Contrato", value=datetime.now())
         
         with col2:
             fila_ubi = df_ubi[df_ubi['ubicacion'] == u_sel]
@@ -91,27 +110,36 @@ if menu == "📝 Ventas":
                     "plazo_meses": int(v_plazo), "mensualidad": round(mensual, 2), "comision": round(v_comision, 2), "estatus_pago": "Activo"
                 }])
                 df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
+                
                 conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v_act, nueva], ignore_index=True))
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
+                
+                if c_input == "+ Agregar Nuevo Cliente":
+                    df_c_act = cargar_datos("clientes")
+                    conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_c_act, pd.DataFrame([{"nombre": v_cliente}])], ignore_index=True))
                 if v_input == "+ Agregar Nuevo Vendedor":
                     df_vend_act = cargar_datos("vendedores")
                     conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=pd.concat([df_vend_act, pd.DataFrame([{"nombre": v_vendedor}])], ignore_index=True))
-                st.success("Venta Guardada"); st.cache_data.clear(); st.rerun()
-            except Exception as e: st.error(e)
+                
+                st.success("Venta Guardada con éxito"); st.cache_data.clear(); st.rerun()
+            except Exception as e: st.error(f"Error al guardar: {e}")
 
 # --- MÓDULO: DETALLE DE CRÉDITO ---
 elif menu == "📊 Detalle de Crédito":
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
-    if df_v.empty: st.warning("No hay ventas.")
+    if df_v.empty: st.warning("No hay ventas registradas.")
     else:
         df_v['display'] = df_v['ubicacion'] + " | " + df_v['cliente']
-        sel = st.selectbox("Contrato", options=df_v['display'].tolist())
+        sel = st.selectbox("Seleccione Contrato", options=df_v['display'].tolist())
         d = df_v[df_v['display'] == sel].iloc[0]
         pagado = round(df_p[df_p['ubicacion'] == d['ubicacion']]['monto'].sum(), 2) if not df_p.empty else 0.0
         
+        m_finan = float(d['precio_total']) - float(d['enganche'])
+        saldo_r = m_finan - pagado
+
         c1, c2 = st.columns(2)
-        c1.metric("Saldo Restante Real", fmt_moneda(float(d['precio_total']) - float(d['enganche']) - pagado))
+        c1.metric("Saldo Restante Real", fmt_moneda(saldo_r))
         c2.metric("Total Abonado", fmt_moneda(pagado))
 
         st.subheader("Estado de Mensualidades")
@@ -121,11 +149,13 @@ elif menu == "📊 Detalle de Crédito":
         for i in range(1, int(d['plazo_meses']) + 1):
             f_ini += relativedelta(months=1)
             cuota = round(float(d['mensualidad']), 2)
-            if acum >= cuota: est = "✅ Pagado"; acum -= cuota
+            if acum >= cuota: est = "✅ Pagado"; acum = round(acum - cuota, 2)
             elif acum > 0: est = f"🔶 Parcial ({fmt_moneda(acum)})"; acum = 0
             else: est = "⏳ Pendiente"
             tabla.append({"Mes": i, "Vencimiento": f_ini.strftime('%d/%m/%Y'), "Cuota": cuota, "Estatus": est})
-        st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True, column_config={"Cuota": st.column_config.NumberColumn(format="$ %.2f")})
+        
+        st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True, 
+                     column_config={"Cuota": st.column_config.NumberColumn(format="$ %.2f")})
 
 # --- MÓDULO: COBRANZA ---
 elif menu == "💰 Cobranza":
@@ -135,65 +165,79 @@ elif menu == "💰 Cobranza":
     if df_v.empty: st.info("Sin ventas activas.")
     else:
         df_v['display'] = df_v['ubicacion'] + " | " + df_v['cliente']
-        c_sel = st.selectbox("Contrato", options=df_v['display'].tolist())
+        c_sel = st.selectbox("Seleccione el Contrato", options=df_v['display'].tolist())
         dv = df_v[df_v['display'] == c_sel].iloc[0]
-        with st.form("pago"):
-            monto = st.number_input("Monto ($)", value=float(dv['mensualidad']))
-            if st.form_submit_button("Registrar Pago"):
-                nuevo = pd.DataFrame([{"fecha": datetime.now().strftime('%Y-%m-%d'), "ubicacion": dv['ubicacion'], "cliente": dv['cliente'], "monto": round(monto, 2)}])
-                conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=pd.concat([df_p, nuevo], ignore_index=True))
-                st.success("Pago registrado"); st.cache_data.clear(); st.rerun()
+        
+        with st.form("pago_form"):
+            col_p1, col_p2 = st.columns(2)
+            fecha_p = col_p1.date_input("Fecha de Pago", value=datetime.now())
+            monto_p = col_p2.number_input("Monto ($)", value=float(dv['mensualidad']), step=100.0)
+            metodo = st.selectbox("Método de Pago", ["Transferencia", "Efectivo", "Depósito"])
+            if st.form_submit_button("Registrar Abono"):
+                nuevo_p = pd.DataFrame([{"fecha": fecha_p.strftime('%Y-%m-%d'), "ubicacion": dv['ubicacion'], "cliente": dv['cliente'], "monto": round(monto_p, 2), "metodo": metodo}])
+                conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=pd.concat([df_p, nuevo_p], ignore_index=True))
+                st.success("Pago registrado correctamente"); st.cache_data.clear(); st.rerun()
 
-# --- MÓDULO: COMISIONES (SOLUCIÓN AL ERROR) ---
+# --- MÓDULO: COMISIONES ---
 elif menu == "💸 Comisiones":
     st.subheader("Gestión de Comisiones")
     df_v = cargar_datos("ventas")
     df_pc = cargar_datos("pagos_comisiones")
     df_vend = cargar_datos("vendedores")
 
-    if df_vend.empty:
-        st.warning("No hay vendedores registrados en el Directorio.")
+    if df_vend.empty: st.warning("Registre vendedores en el Directorio primero.")
     else:
         v_sel = st.selectbox("Seleccione Vendedor", options=df_vend["nombre"].unique())
         
-        # Filtro seguro: si la hoja está vacía, evitamos el KeyError
-        if not df_v.empty and "vendedor" in df_v.columns:
-            ganado = round(df_v[df_v["vendedor"] == v_sel]["comision"].sum(), 2)
-        else: ganado = 0.0
-
-        if not df_pc.empty and "vendedor" in df_pc.columns:
-            pagado = round(df_pc[df_pc["vendedor"] == v_sel]["monto"].sum(), 2)
-        else: pagado = 0.0
-
+        ganado = round(df_v[df_v["vendedor"] == v_sel]["comision"].sum(), 2) if not df_v.empty else 0.0
+        pagado = round(df_pc[df_pc["vendedor"] == v_sel]["monto"].sum(), 2) if not df_pc.empty else 0.0
         saldo = round(ganado - pagado, 2)
         
         c1, c2, c3 = st.columns(3)
         c1.metric("Comisiones Ganadas", fmt_moneda(ganado))
         c2.metric("Comisiones Pagadas", fmt_moneda(pagado))
-        c3.metric("Saldo por Pagar", fmt_moneda(saldo))
+        c3.metric("Saldo Pendiente", fmt_moneda(saldo))
         
         st.divider()
         col_t, col_f = st.columns([2, 1])
         with col_t:
-            st.write("### Historial de Ventas")
+            st.write("### 📝 Historial de Ventas")
             if not df_v.empty:
-                st.dataframe(df_v[df_v["vendedor"] == v_sel][["fecha", "ubicacion", "comision"]], hide_index=True, column_config={"comision": st.column_config.NumberColumn(format="$ %.2f")})
+                st.dataframe(df_v[df_v["vendedor"] == v_sel][["fecha", "ubicacion", "comision"]], 
+                             hide_index=True, use_container_width=True,
+                             column_config={"comision": st.column_config.NumberColumn(format="$ %.2f")})
         with col_f:
-            st.write("### Pagar Comisión")
+            st.write("### 💵 Pagar Comisión")
             with st.form("f_pago_com", clear_on_submit=True):
                 m_pago = st.number_input("Monto a pagar ($)", min_value=0.0, max_value=float(saldo) if saldo > 0 else 0.01)
-                ref = st.text_input("Referencia")
+                ref = st.text_input("Referencia/Banco")
                 if st.form_submit_button("Registrar Pago"):
                     nuevo_p = pd.DataFrame([{"fecha": datetime.now().strftime('%Y-%m-%d'), "vendedor": v_sel, "monto": round(m_pago, 2), "referencia": ref}])
                     conn.update(spreadsheet=URL_SHEET, worksheet="pagos_comisiones", data=pd.concat([df_pc, nuevo_p], ignore_index=True))
-                    st.success("Pago guardado"); st.cache_data.clear(); st.rerun()
+                    st.success("Pago de comisión guardado"); st.cache_data.clear(); st.rerun()
 
-# --- OTROS MÓDULOS ---
+# --- MÓDULO: CATALOGO ---
 elif menu == "📑 Catálogo":
+    st.subheader("Inventario de Ubicaciones")
     df_cat = cargar_datos("ubicaciones")
-    st.dataframe(df_cat, hide_index=True, column_config={"precio": st.column_config.NumberColumn(format="$ %.2f")})
+    if not df_cat.empty:
+        st.dataframe(df_cat, hide_index=True, use_container_width=True,
+                     column_config={"precio": st.column_config.NumberColumn(format="$ %.2f")})
+    
+    with st.expander("Añadir Nueva Ubicación"):
+        with st.form("add_ubi"):
+            n_ubi = st.text_input("Identificador (Ej: M1-L5)")
+            n_pre = st.number_input("Precio ($)", min_value=0.0, step=1000.0)
+            if st.form_submit_button("Guardar en Catálogo"):
+                nueva_u = pd.DataFrame([{"ubicacion": n_ubi, "precio": n_pre, "estatus": "Disponible"}])
+                conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=pd.concat([df_cat, nueva_u], ignore_index=True))
+                st.success("Ubicación añadida"); st.cache_data.clear(); st.rerun()
 
+# --- MÓDULO: DIRECTORIO ---
 elif menu == "📇 Directorio":
     t1, t2 = st.tabs(["Clientes", "Vendedores"])
-    t1.dataframe(cargar_datos("clientes"), use_container_width=True)
-    t2.dataframe(cargar_datos("vendedores"), use_container_width=True)
+    t1.dataframe(cargar_datos("clientes"), use_container_width=True, hide_index=True)
+    t2.dataframe(cargar_datos("vendedores"), use_container_width=True, hide_index=True)
+
+st.sidebar.write("---")
+st.sidebar.success("Sistema Sincronizado")
