@@ -11,12 +11,12 @@ st.set_page_config(page_title="Inmobiliaria Pro", layout="wide")
 conn = st.connection("gsheets", type=GSheetsConnection)
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/edit#gid=0"
 
-# --- FUNCIÓN PARA FORMATO DE MONEDA (PROSE) ---
+# --- FUNCIÓN PARA FORMATO DE MONEDA EN TEXTO ---
 def fmt_moneda(valor):
     try:
-        return f"${float(valor):,.2f}"
+        return f"$ {float(valor):,.2f}"
     except:
-        return "$0.00"
+        return "$ 0.00"
 
 # --- FUNCIONES DE APOYO ---
 def cargar_datos(pestana):
@@ -156,7 +156,7 @@ elif menu == "📊 Detalle de Crédito":
                 estatus = "✅ Pagado"
                 acumulado_pagos = round(acumulado_pagos - cuota, 2)
             elif acumulado_pagos > 0:
-                estatus = f"🔶 Abono parcial ({fmt_moneda(acumulado_pagos)})"
+                estatus = f"🔶 Parcial ({fmt_moneda(acumulado_pagos)})"
                 acumulado_pagos = 0
             else:
                 estatus = "⏳ Pendiente"
@@ -172,8 +172,8 @@ elif menu == "📊 Detalle de Crédito":
         
         st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True,
                      column_config={
-                         "Cuota": st.column_config.NumberColumn(format="$%,.2f"),
-                         "Saldo tras pago": st.column_config.NumberColumn(format="$%,.2f"),
+                         "Cuota": st.column_config.NumberColumn(format="$ %.2f"),
+                         "Saldo tras pago": st.column_config.NumberColumn(format="$ %.2f"),
                          "Mes": st.column_config.NumberColumn(format="%d")
                      })
 
@@ -218,7 +218,7 @@ elif menu == "📑 Catálogo":
         df_cat["precio"] = pd.to_numeric(df_cat["precio"], errors='coerce').round(2)
         st.dataframe(df_cat[["ubicacion", "precio", "estatus"]], use_container_width=True, hide_index=True,
                      column_config={
-                         "precio": st.column_config.NumberColumn(format="$%,.2f")
+                         "precio": st.column_config.NumberColumn(format="$ %.2f")
                      })
 
 # --- MÓDULO: DIRECTORIO ---
@@ -228,4 +228,4 @@ elif menu == "📇 Directorio":
     with t2: st.dataframe(cargar_datos("vendedores"), use_container_width=True, hide_index=True)
 
 st.sidebar.write("---")
-st.sidebar.success("Sistema Formateado Correctamente")
+st.sidebar.success("Sistema Listo")
