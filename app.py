@@ -14,7 +14,7 @@ except Exception as e:
     st.stop()
 
 # LINK DE TU HOJA (Cámbialo por el tuyo)
-URL_SHEET = "https://docs.google.com/spreadsheets/d/TU_NUEVO_ID_AQUI/"
+URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/"
 
 # INTERFAZ PRINCIPAL
 st.title("🏡 Sistema de Gestión Inmobiliaria")
@@ -56,3 +56,4 @@ elif menu == "💰 Abonos y Pagos":
 else:
     st.subheader("Bienvenido al sistema")
     st.write("Selecciona una opción en el menú de la izquierda para comenzar.")
+
