@@ -187,9 +187,7 @@ elif menu == "📑 Catálogo":
         # 1. Definimos los colores (Puedes cambiarlos aquí)
         def estilo_filas(row):
             if row.estatus == 'Disponible':
-                return ['background-color: #d4efdf; color: #1b5e20'] * len(row) # Verde suave
-            elif row.estatus == 'Vendido':
-                return ['background-color: #f2d7d5; color: #943126'] * len(row) # Rojo suave
+                return ['background-color: green'] * len(row) # Verde suave
             return [''] * len(row)
 
         # 2. Ocultamos 'id_lote' seleccionando solo las columnas que queremos ver
@@ -208,3 +206,4 @@ elif menu == "📇 Directorio":
     t1, t2 = st.tabs(["Clientes", "Vendedores"])
     t1.dataframe(cargar_datos("clientes"), use_container_width=True, hide_index=True)
     t2.dataframe(cargar_datos("vendedores"), use_container_width=True, hide_index=True)
+
