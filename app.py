@@ -42,17 +42,75 @@ if st.sidebar.button("🔄 Actualizar Base de Datos"):
 st.title(f"Sistema Inmobiliario - {menu[2:]}")
 
 # --- MÓDULO: INICIO ---
+# --- MÓDULO: INICIO (DASHBOARD ESTRATÉGICO) ---
 if menu == "🏠 Inicio":
-    st.subheader("Resumen de Operaciones")
     df_v = cargar_datos("ventas")
     df_u = cargar_datos("ubicaciones")
-    c1, c2, c3 = st.columns(3)
-    if not df_v.empty:
-        activos = len(df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]) if "estatus_pago" in df_v.columns else len(df_v)
-        c1.metric("Ventas Totales", fmt_moneda(df_v["precio_total"].sum()))
-        c2.metric("Contratos Activos", activos)
-    if not df_u.empty:
-        c3.metric("Lotes Disponibles", len(df_u[df_u["estatus"] == "Disponible"]))
+    df_p = cargar_datos("pagos")
+    
+    # --- PROCESAMIENTO DE DATOS ---
+    # Aseguramos que existan las columnas clave para evitar errores si la hoja está vacía
+    if "estatus_pago" not in df_v.columns: df_v["estatus_pago"] = "Activo"
+    
+    # Cálculos financieros
+    total_ventas_usd = df_v["precio_total"].sum() if not df_v.empty else 0
+    total_recaudado = df_p["monto"].sum() if not df_p.empty else 0
+    total_enganches = df_v["enganche"].sum() if not df_v.empty else 0
+    flujo_total = total_recaudado + total_enganches
+    
+    # Conteo de contratos
+    contratos_activos = len(df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]) if not df_v.empty else 0
+    
+    # --- FILA 1: MÉTRICAS FINANCIERAS ---
+    st.subheader("💰 Resumen Financiero")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Ventas Totales (Contratado)", fmt_moneda(total_ventas_usd))
+    c2.metric("Flujo Total Entrante", fmt_moneda(flujo_total), help="Suma de Enganches + Abonos registrados")
+    c3.metric("Por Cobrar (Cartera)", fmt_moneda(total_ventas_usd - flujo_total))
+    c4.metric("Contratos Activos", contratos_activos)
+    
+    st.divider()
+    
+    # --- FILA 2: INVENTARIO Y COBRANZA ---
+    col_inv, col_cob = st.columns(2)
+    
+    with col_inv:
+        st.subheader("📑 Inventario de Lotes")
+        if not df_u.empty:
+            disponibles = len(df_u[df_u["estatus"] == "Disponible"])
+            vendidos = len(df_u[df_u["estatus"] == "Vendido"])
+            total_lotes = len(df_u)
+            perc_venta = (vendidos / total_lotes) if total_lotes > 0 else 0
+            
+            st.write(f"**Progreso de Desplazamiento:** {int(perc_venta*100)}%")
+            st.progress(perc_venta)
+            
+            ci1, ci2 = st.columns(2)
+            ci1.write(f"✅ **Disponibles:** {disponibles}")
+            ci2.write(f"🤝 **Vendidos:** {vendidos}")
+        else:
+            st.info("Cargue datos en Ubicaciones para ver el inventario.")
+
+    with col_cob:
+        st.subheader("📅 Cobranza Mensual")
+        if not df_v.empty:
+            # Sumamos las mensualidades de los contratos que están "Activos"
+            mensualidad_esperada = df_v[df_v["estatus_pago"] == "Activo"]["mensualidad"].sum()
+            st.write("**Meta de Recaudación Mensual (Activos):**")
+            st.info(f"### {fmt_moneda(mensualidad_esperada)}")
+        else:
+            st.info("No hay contratos activos para calcular mensualidades.")
+
+    st.divider()
+
+    # --- FILA 3: ÚLTIMOS MOVIMIENTOS ---
+    st.subheader("⚡ Últimos 5 Pagos Registrados")
+    if not df_p.empty:
+        # tail(5) toma los últimos 5 y sort_values los ordena por fecha
+        ultimos_p = df_p.tail(5).sort_values(by="fecha", ascending=False)
+        st.table(ultimos_p[["fecha", "cliente", "monto"]].assign(monto=ultimos_p["monto"].apply(fmt_moneda)))
+    else:
+        st.write("No hay abonos registrados recientemente.")
 
 # --- MÓDULO: VENTAS ---
 elif menu == "📝 Ventas":
@@ -240,3 +298,4 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
