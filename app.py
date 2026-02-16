@@ -68,6 +68,8 @@ if menu == "🏠 Inicio":
     c3.metric("Por Cobrar (Cartera)", fmt_moneda(total_ventas_usd - flujo_total))
     c4.metric("Contratos Activos", contratos_activos)
     
+    st.divider()
+    
     # --- FILA 2: INVENTARIO Y COBRANZA ---
     col_inv, col_cob = st.columns(2)
     
@@ -171,7 +173,6 @@ if menu == "🏠 Inicio":
         )
     else:
         st.info("No hay contratos registrados para monitorear.")
-
 
 # --- MÓDULO: VENTAS ---
 elif menu == "📝 Ventas":
@@ -359,6 +360,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
