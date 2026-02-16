@@ -68,8 +68,6 @@ if menu == "🏠 Inicio":
     c3.metric("Por Cobrar (Cartera)", fmt_moneda(total_ventas_usd - flujo_total))
     c4.metric("Contratos Activos", contratos_activos)
     
-    st.divider()
-    
     # --- FILA 2: INVENTARIO Y COBRANZA ---
     col_inv, col_cob = st.columns(2)
     
@@ -100,16 +98,80 @@ if menu == "🏠 Inicio":
         else:
             st.info("No hay contratos activos para calcular mensualidades.")
 
-    st.divider()
+       st.divider()
 
-    # --- FILA 3: ÚLTIMOS MOVIMIENTOS ---
-    st.subheader("⚡ Últimos 5 Pagos Registrados")
-    if not df_p.empty:
-        # tail(5) toma los últimos 5 y sort_values los ordena por fecha
-        ultimos_p = df_p.tail(5).sort_values(by="fecha", ascending=False)
-        st.table(ultimos_p[["fecha", "cliente", "monto"]].assign(monto=ultimos_p["monto"].apply(fmt_moneda)))
+    # --- FILA 3: MONITOR DE CARTERA (SITUACIÓN DE CLIENTES) ---
+    st.subheader("🚩 Monitor de Cartera y Cobranza")
+    
+    if not df_v.empty:
+        monitor_data = []
+        hoy = datetime.now()
+
+        for _, venta in df_v.iterrows():
+            # 1. Calcular Total Pagado (Abonos)
+            pagos_cliente = df_p[df_p['ubicacion'] == venta['ubicacion']]['monto'].sum() if not df_p.empty else 0.0
+            
+            # 2. Calcular Saldo para Liquidar
+            saldo_liquidar = float(venta['precio_total']) - float(venta['enganche']) - pagos_cliente
+            
+            # 3. Calcular Estatus y Atrasos
+            # Determinamos cuántos meses han pasado desde el contrato
+            try:
+                fecha_con = datetime.strptime(str(venta['fecha']), '%Y-%m-%d')
+            except:
+                fecha_con = hoy
+            
+            meses_transcurridos = (hoy.year - fecha_con.year) * 12 + (hoy.month - fecha_con.month)
+            # El cliente debería haber pagado: (meses * mensualidad)
+            debe_a_la_fecha = meses_transcurridos * float(venta['mensualidad'])
+            
+            pago_para_corriente = debe_a_la_fecha - pagos_cliente
+            
+            if pago_para_corriente > 1.0: # Margen de $1 por decimales
+                estatus_c = "🔴 Atrasado"
+                # Cálculo aproximado de días (basado en el día de firma)
+                dia_pago = fecha_con.day
+                fecha_vencimiento_ultimo = hoy.replace(day=dia_pago) if hoy.day >= dia_pago else (hoy - relativedelta(months=1)).replace(day=dia_pago)
+                dias_atraso = (hoy - fecha_vencimiento_ultimo).days
+            else:
+                estatus_c = "🟢 Corriente"
+                pago_para_corriente = 0.0
+                dias_atraso = 0
+
+            monitor_data.append({
+                "Ubicación": venta['ubicacion'],
+                "Cliente": venta['cliente'],
+                "Fecha Contrato": venta['fecha'],
+                "Costo": float(venta['precio_total']),
+                "Enganche": float(venta['enganche']),
+                "Total Pagado": pagos_cliente,
+                "Estatus": estatus_c,
+                "Días Atraso": dias_atraso,
+                "Para estar al corriente": pago_para_corriente,
+                "Saldo Liquidar": saldo_liquidar
+            })
+
+        df_monitor = pd.DataFrame(monitor_data)
+        
+        # Aplicar formato de moneda a las columnas necesarias para la visualización
+        cols_moneda = ["Costo", "Enganche", "Total Pagado", "Para estar al corriente", "Saldo Liquidar"]
+        
+        st.dataframe(
+            df_monitor,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Costo": st.column_config.NumberColumn(format="$ %.2f"),
+                "Enganche": st.column_config.NumberColumn(format="$ %.2f"),
+                "Total Pagado": st.column_config.NumberColumn(format="$ %.2f"),
+                "Para estar al corriente": st.column_config.NumberColumn(format="$ %.2f"),
+                "Saldo Liquidar": st.column_config.NumberColumn(format="$ %.2f"),
+                "Estatus": st.column_config.TextColumn(help="Verde si el pago cubre los meses transcurridos"),
+            }
+        )
     else:
-        st.write("No hay abonos registrados recientemente.")
+        st.info("No hay contratos registrados para monitorear.")
+
 
 # --- MÓDULO: VENTAS ---
 elif menu == "📝 Ventas":
@@ -297,5 +359,6 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
