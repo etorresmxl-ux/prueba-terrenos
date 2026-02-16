@@ -43,34 +43,31 @@ st.title(f"Sistema Inmobiliario - Resumen")
 
 # --- MÓDULO: INICIO (DASHBOARD ESTRATÉGICO) ---
 if menu == "🏠 Inicio":
+    # 1. CARGA DE DATOS
     df_v = cargar_datos("ventas")
     df_u = cargar_datos("ubicaciones")
     df_p = cargar_datos("pagos")
     
-    # --- PROCESAMIENTO DE DATOS ---
-    # Aseguramos que existan las columnas clave para evitar errores si la hoja está vacía
-    if "estatus_pago" not in df_v.columns: df_v["estatus_pago"] = "Activo"
+    # 2. PROCESAMIENTO Y CÁLCULOS BASE
+    if "estatus_pago" not in df_v.columns: 
+        df_v["estatus_pago"] = "Activo"
     
-    # Cálculos financieros
-    total_ventas_usd = df_v["precio_total"].sum() if not df_v.empty else 0
+    total_ventas = df_v["precio_total"].sum() if not df_v.empty else 0
     total_recaudado = df_p["monto"].sum() if not df_p.empty else 0
     total_enganches = df_v["enganche"].sum() if not df_v.empty else 0
     flujo_total = total_recaudado + total_enganches
     
-    # Conteo de contratos
     contratos_activos = len(df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]) if not df_v.empty else 0
     
     # --- FILA 1: MÉTRICAS FINANCIERAS ---
     st.subheader("💰 Resumen Financiero")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Ventas Totales (Contratado)", fmt_moneda(total_ventas_usd))
+    c1.metric("Ventas Totales (Contratado)", fmt_moneda(total_ventas))
     c2.metric("Flujo Total Entrante", fmt_moneda(flujo_total), help="Suma de Enganches + Abonos registrados")
-    c3.metric("Por Cobrar (Cartera)", fmt_moneda(total_ventas_usd - flujo_total))
+    c3.metric("Por Cobrar (Cartera)", fmt_moneda(total_ventas - flujo_total))
     c4.metric("Contratos Activos", contratos_activos)
     
-    st.divider()
-    
-    # --- FILA 2: INVENTARIO Y COBRANZA ---
+    # --- FILA 2: INVENTARIO Y COBRANZA (SIN DIVIDER INTERMEDIO) ---
     col_inv, col_cob = st.columns(2)
     
     with col_inv:
@@ -93,14 +90,14 @@ if menu == "🏠 Inicio":
     with col_cob:
         st.subheader("📅 Cobranza Mensual")
         if not df_v.empty:
-            # Sumamos las mensualidades de los contratos que están "Activos"
+            # Suma de mensualidades de contratos activos
             mensualidad_esperada = df_v[df_v["estatus_pago"] == "Activo"]["mensualidad"].sum()
             st.write("**Meta de Recaudación Mensual (Activos):**")
             st.info(f"### {fmt_moneda(mensualidad_esperada)}")
         else:
-            st.info("No hay contratos activos para calcular mensualidades.")
+            st.info("Sin contratos activos.")
 
-       st.divider()
+    st.divider()
 
     # --- FILA 3: MONITOR DE CARTERA (SITUACIÓN DE CLIENTES) ---
     st.subheader("🚩 Monitor de Cartera y Cobranza")
@@ -110,31 +107,32 @@ if menu == "🏠 Inicio":
         hoy = datetime.now()
 
         for _, venta in df_v.iterrows():
-            # 1. Calcular Total Pagado (Abonos)
+            # Cálculo de pagos realizados para esta ubicación
             pagos_cliente = df_p[df_p['ubicacion'] == venta['ubicacion']]['monto'].sum() if not df_p.empty else 0.0
-            
-            # 2. Calcular Saldo para Liquidar
             saldo_liquidar = float(venta['precio_total']) - float(venta['enganche']) - pagos_cliente
             
-            # 3. Calcular Estatus y Atrasos
-            # Determinamos cuántos meses han pasado desde el contrato
+            # Lógica de atraso basada en meses transcurridos
             try:
                 fecha_con = datetime.strptime(str(venta['fecha']), '%Y-%m-%d')
             except:
                 fecha_con = hoy
             
             meses_transcurridos = (hoy.year - fecha_con.year) * 12 + (hoy.month - fecha_con.month)
-            # El cliente debería haber pagado: (meses * mensualidad)
             debe_a_la_fecha = meses_transcurridos * float(venta['mensualidad'])
-            
             pago_para_corriente = debe_a_la_fecha - pagos_cliente
             
-            if pago_para_corriente > 1.0: # Margen de $1 por decimales
+            if pago_para_corriente > 1.0:
                 estatus_c = "🔴 Atrasado"
-                # Cálculo aproximado de días (basado en el día de firma)
+                # Calculamos días desde el día que debió pagar este mes
                 dia_pago = fecha_con.day
-                fecha_vencimiento_ultimo = hoy.replace(day=dia_pago) if hoy.day >= dia_pago else (hoy - relativedelta(months=1)).replace(day=dia_pago)
-                dias_atraso = (hoy - fecha_vencimiento_ultimo).days
+                try:
+                    fecha_venc_mes = hoy.replace(day=dia_pago)
+                    if hoy < fecha_venc_mes:
+                        fecha_venc_mes = fecha_venc_mes - relativedelta(months=1)
+                except: # Por si el día es 31 y el mes tiene 30
+                    fecha_venc_mes = hoy.replace(day=1) - relativedelta(days=1)
+                
+                dias_atraso = (hoy - fecha_venc_mes).days
             else:
                 estatus_c = "🟢 Corriente"
                 pago_para_corriente = 0.0
@@ -155,9 +153,7 @@ if menu == "🏠 Inicio":
 
         df_monitor = pd.DataFrame(monitor_data)
         
-        # Aplicar formato de moneda a las columnas necesarias para la visualización
-        cols_moneda = ["Costo", "Enganche", "Total Pagado", "Para estar al corriente", "Saldo Liquidar"]
-        
+        # Mostrar tabla interactiva con formatos de moneda
         st.dataframe(
             df_monitor,
             use_container_width=True,
@@ -167,12 +163,11 @@ if menu == "🏠 Inicio":
                 "Enganche": st.column_config.NumberColumn(format="$ %.2f"),
                 "Total Pagado": st.column_config.NumberColumn(format="$ %.2f"),
                 "Para estar al corriente": st.column_config.NumberColumn(format="$ %.2f"),
-                "Saldo Liquidar": st.column_config.NumberColumn(format="$ %.2f"),
-                "Estatus": st.column_config.TextColumn(help="Verde si el pago cubre los meses transcurridos"),
+                "Saldo Liquidar": st.column_config.NumberColumn(format="$ %.2f")
             }
         )
     else:
-        st.info("No hay contratos registrados para monitorear.")
+        st.info("No hay ventas registradas para el monitor.")
 
 # --- MÓDULO: VENTAS ---
 elif menu == "📝 Ventas":
@@ -360,6 +355,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
