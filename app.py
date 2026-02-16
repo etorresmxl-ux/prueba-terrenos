@@ -48,7 +48,6 @@ if menu == "🏠 Inicio":
     df_u = cargar_datos("ubicaciones")
     c1, c2, c3 = st.columns(3)
     if not df_v.empty:
-        # Contabilizar Activos (Manejo de valores nulos)
         activos = len(df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]) if "estatus_pago" in df_v.columns else len(df_v)
         c1.metric("Ventas Totales", fmt_moneda(df_v["precio_total"].sum()))
         c2.metric("Contratos Activos", activos)
@@ -90,7 +89,6 @@ elif menu == "📝 Ventas":
 
         if st.button("Confirmar Venta", type="primary"):
             try:
-                # Registro express
                 if c_sel == "+ Agregar Nuevo Cliente" and c_nombre:
                     new_id_c = int(df_cli["id_cliente"].max()) + 1 if (not df_cli.empty and "id_cliente" in df_cli.columns) else 1
                     df_new_c = pd.DataFrame([{"id_cliente": new_id_c, "nombre": c_nombre, "telefono": "", "correo": ""}])
@@ -108,14 +106,13 @@ elif menu == "📝 Ventas":
                     "cliente": c_nombre, "vendedor": vn_nombre, "precio_total": round(v_precio, 2), 
                     "enganche": round(v_enganche, 2), "plazo_meses": int(v_plazo), 
                     "mensualidad": round(mensual, 2), "comision": round(v_comision, 2),
-                    "comentarios": v_comentarios, "estatus_pago": "Activo" # Forzamos el registro
+                    "comentarios": v_comentarios, "estatus_pago": "Activo"
                 }])
                 
                 df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
                 conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v_act, nueva_v], ignore_index=True))
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
-                
-                st.success(f"Venta Folio {nuevo_id_v} registrada con estatus Activo."); st.cache_data.clear(); st.rerun()
+                st.success("Venta guardada exitosamente."); st.cache_data.clear(); st.rerun()
             except Exception as e: st.error(f"Error: {e}")
 
 # --- MÓDULO: DETALLE DE CRÉDITO ---
@@ -124,30 +121,23 @@ elif menu == "📊 Detalle de Crédito":
     df_p = cargar_datos("pagos")
     if df_v.empty: st.warning("No hay ventas.")
     else:
-        # Asegurar que la columna existe para no romper el filtro
         if "estatus_pago" not in df_v.columns: df_v["estatus_pago"] = "Activo"
-        
         solo_activos = st.checkbox("Mostrar solo contratos activos", value=True)
         if solo_activos:
             df_v = df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]
-            
         df_v['display'] = df_v['ubicacion'] + " | " + df_v['cliente']
         sel = st.selectbox("Seleccione Contrato", options=df_v['display'].tolist())
         d = df_v[df_v['display'] == sel].iloc[0]
-        
         pagado = round(df_p[df_p['ubicacion'] == d['ubicacion']]['monto'].sum(), 2) if not df_p.empty else 0.0
         m_finan = float(d['precio_total']) - float(d['enganche'])
         saldo_r = m_finan - pagado
         porcentaje = min(pagado / m_finan, 1.0) if m_finan > 0 else 0
-
         c1, c2 = st.columns(2)
         c1.metric("Saldo Pendiente", fmt_moneda(saldo_r))
         c2.metric("Total Abonado", fmt_moneda(pagado))
         st.progress(porcentaje)
-        
         if "comentarios" in d and pd.notna(d['comentarios']) and d['comentarios'] != "":
             st.info(f"**Notas:** {d['comentarios']}")
-
         st.subheader("📋 Tabla de Amortización")
         tabla = []
         try: f_venc = datetime.strptime(str(d['fecha']), '%Y-%m-%d')
@@ -170,7 +160,6 @@ elif menu == "💰 Cobranza":
     if not df_v.empty:
         if "estatus_pago" not in df_v.columns: df_v["estatus_pago"] = "Activo"
         df_v['display'] = df_v['ubicacion'] + " | " + df_v['cliente']
-        # Filtramos para que solo aparezcan los activos en cobranza
         lista_cobro = df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]['display'].tolist()
         c_sel = st.selectbox("Contrato", options=lista_cobro)
         dv = df_v[df_v['display'] == c_sel].iloc[0]
@@ -199,15 +188,29 @@ elif menu == "💸 Comisiones":
                 conn.update(spreadsheet=URL_SHEET, worksheet="pagos_comisiones", data=pd.concat([df_pc, nuevo], ignore_index=True))
                 st.success("Pagado"); st.cache_data.clear(); st.rerun()
 
-# --- MÓDULO: CATALOGO ---
+# --- MÓDULO: CATALOGO (NUEVO FILTRO TOGGLE) ---
 elif menu == "📑 Catálogo":
     st.subheader("Inventario de Ubicaciones")
     df_cat = cargar_datos("ubicaciones")
     if not df_cat.empty:
+        # Toggle para filtrar disponibles
+        solo_disponibles = st.toggle("Mostrar solo disponibles", value=True)
+        
+        df_mostrar = df_cat.copy()
+        if solo_disponibles:
+            df_mostrar = df_mostrar[df_mostrar["estatus"] == "Disponible"]
+
         def estilo_disponible(row):
             return ['background-color: green; color: white' if row.estatus == 'Disponible' else '' for _ in row]
-        cols = [c for c in ["ubicacion", "precio", "estatus"] if c in df_cat.columns]
-        st.dataframe(df_cat[cols].style.apply(estilo_disponible, axis=1), hide_index=True, use_container_width=True, column_config={"precio": st.column_config.NumberColumn(format="$ %.2f")})
+        
+        cols = [c for c in ["ubicacion", "precio", "estatus"] if c in df_mostrar.columns]
+        st.dataframe(
+            df_mostrar[cols].style.apply(estilo_disponible, axis=1), 
+            hide_index=True, 
+            use_container_width=True, 
+            column_config={"precio": st.column_config.NumberColumn(format="$ %.2f")}
+        )
+        st.caption(f"Mostrando {len(df_mostrar)} ubicaciones.")
 
 # --- MÓDULO: DIRECTORIO ---
 elif menu == "📇 Directorio":
@@ -215,7 +218,6 @@ elif menu == "📇 Directorio":
     pestana = "clientes" if tipo == "Clientes" else "vendedores"
     col_id = "id_cliente" if tipo == "Clientes" else "id_vendedor"
     df_dir = cargar_datos(pestana)
-    
     with st.expander(f"➕ Registrar / Editar {tipo[:-1]}"):
         with st.form("form_dir", clear_on_submit=True):
             f_nom = st.text_input("Nombre Completo")
@@ -232,7 +234,6 @@ elif menu == "📇 Directorio":
                         conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=pd.concat([df_dir, nuevo_reg], ignore_index=True))
                     st.success("Guardado."); st.cache_data.clear(); st.rerun()
                 else: st.error("Nombre obligatorio")
-
     st.write(f"### Lista de {tipo}")
     if not df_dir.empty:
         st.dataframe(df_dir[["nombre", "telefono", "correo"]], use_container_width=True, hide_index=True)
