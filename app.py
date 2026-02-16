@@ -39,9 +39,8 @@ if st.sidebar.button("🔄 Actualizar Base de Datos"):
     st.cache_data.clear()
     st.rerun()
 
-st.title(f"Sistema Inmobiliario - {menu[2:]}")
+st.title(f"Sistema Inmobiliario - Resumen")
 
-# --- MÓDULO: INICIO ---
 # --- MÓDULO: INICIO (DASHBOARD ESTRATÉGICO) ---
 if menu == "🏠 Inicio":
     df_v = cargar_datos("ventas")
@@ -298,4 +297,5 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
