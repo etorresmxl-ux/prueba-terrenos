@@ -332,6 +332,7 @@ elif menu == "📊 Detalle de Crédito":
     if df_v.empty:
         st.warning("No hay ventas registradas.")
     else:
+        # 1. SELECTOR DE CONTRATO
         opciones_vta = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist()
         seleccion = st.selectbox("🔍 Seleccione un Contrato:", opciones_vta)
         
@@ -349,7 +350,12 @@ elif menu == "📊 Detalle de Crédito":
         fecha_contrato = pd.to_datetime(v['fecha'])
         hoy = datetime.now()
 
-        # Cálculos de cabecera
+        # Cálculo de avance del crédito
+        # Porcentaje basado en el monto a financiar
+        porcentaje_pagado = (total_pagado_historico / monto_credito) if monto_credito > 0 else 0
+        porcentaje_pagado = min(1.0, porcentaje_pagado) # Topar al 100%
+
+        # Cálculos de morosidad
         meses_transcurridos = (hoy.year - fecha_contrato.year) * 12 + (hoy.month - fecha_contrato.month)
         meses_a_deber = max(0, min(meses_transcurridos, int(v['plazo_meses'])))
         deuda_a_la_fecha = meses_a_deber * mensualidad_pactada
@@ -358,21 +364,30 @@ elif menu == "📊 Detalle de Crédito":
 
         # --- SECCIÓN: INFORMACIÓN GENERAL ---
         st.markdown("### 📋 Resumen del Crédito")
+        
+        # --- NUEVA BARRA DE PROGRESO ---
+        st.write(f"**Progreso de Liquidación del Crédito: {int(porcentaje_pagado * 100)}%**")
+        st.progress(porcentaje_pagado)
+        st.write("") 
+
         c1, c2, c3 = st.columns(3)
         with c1:
             st.write(f"**📍 Ubicación:** {v['ubicacion']}")
             st.write(f"**👤 Cliente:** {v['cliente']}")
+            st.write(f"**📅 Contrato:** {v['fecha']}")
         with c2:
             st.metric("Total Pagado", fmt_moneda(total_pagado_historico))
+            st.write(f"**💵 Crédito Original:** {fmt_moneda(monto_credito)}")
             st.write(f"**💳 Mensualidad:** {fmt_moneda(mensualidad_pactada)}")
         with c3:
             st.metric("Saldo Vencido", fmt_moneda(saldo_vencido), 
                       delta=f"{int(num_atrasos)} meses" if num_atrasos >= 1 else None, 
                       delta_color="inverse")
+            st.write(f"**Saldo Restante:** {fmt_moneda(max(0, monto_credito - total_pagado_historico))}")
 
         st.divider()
 
-        # --- SECCIÓN: TABLA DE AMORTIZACIÓN CON ESTATUS DETALLADO ---
+        # --- SECCIÓN: TABLA DE AMORTIZACIÓN ---
         st.subheader("📅 Plan de Pagos")
         
         amortizacion = []
@@ -382,7 +397,6 @@ elif menu == "📊 Detalle de Crédito":
             fecha_vencimiento = fecha_contrato + relativedelta(months=i)
             pago_realizado = 0.0
             
-            # Determinar cuánto se abonó a esta mensualidad
             if bolsa_pagos >= mensualidad_pactada:
                 pago_realizado = mensualidad_pactada
                 bolsa_pagos -= mensualidad_pactada
@@ -393,11 +407,10 @@ elif menu == "📊 Detalle de Crédito":
                 estatus = "🟡 PAGO PARCIAL"
             else:
                 pago_realizado = 0.0
-                # Lógica de fecha para Pendiente vs Vencido
                 if fecha_vencimiento.date() <= hoy.date():
                     estatus = "🔴 VENCIDO"
                 else:
-                    estatus = ""
+                    estatus = "PENDIENTE"
             
             amortizacion.append({
                 "Mes": i,
@@ -409,18 +422,7 @@ elif menu == "📊 Detalle de Crédito":
             })
 
         df_tab = pd.DataFrame(amortizacion)
-        
-        # Mostramos la tabla
-        st.dataframe(
-            df_tab, 
-            use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Importe": st.column_config.NumberColumn(format="$ %.2f"),
-                "Pago Realizado": st.column_config.NumberColumn(format="$ %.2f"),
-                "Estatus": st.column_config.TextColumn()
-            }
-        )
+        st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
 # ==========================================
 # 💰 MÓDULO: COBRANZA
@@ -796,5 +798,6 @@ elif menu == "👥 Clientes":
                         df_c = df_c.drop(idx)
                         conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_c)
                         st.error("Cliente eliminado."); st.cache_data.clear(); st.rerun()
+
 
 
