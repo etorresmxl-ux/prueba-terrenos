@@ -27,11 +27,20 @@ def cargar_datos(pestana):
     except:
         return pd.DataFrame()
 
-# --- BARRA LATERAL ---
+# --- 2. BARRA LATERAL CON ICONOS RENOVADOS ---
 st.sidebar.title("Navegación")
 menu = st.sidebar.radio(
     "Seleccione una sección:",
-    ["🏠 Inicio", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Gastos", "💸 Comisiones", "📑 Catálogo", "📇 Directorio"]
+    [
+        "🏠 Inicio", 
+        "📝 Ventas", 
+        "📊 Detalle de Crédito", 
+        "💰 Cobranza", 
+        "💸 Gastos", 
+        "🎖️ Comisiones", 
+        "📍 Catálogo", 
+        "📇 Directorio"
+    ]
 )
 
 st.sidebar.markdown("---")
@@ -39,7 +48,8 @@ if st.sidebar.button("🔄 Actualizar Base de Datos"):
     st.cache_data.clear()
     st.rerun()
 
-st.title(f"Sistema Inmobiliario - Resumen")
+# Esto actualiza el título dinámicamente según la opción elegida
+st.title(f"Sistema Inmobiliario - {menu[2:]}")
 
 # --- MÓDULO: INICIO (DASHBOARD ESTRATÉGICO CON UTILIDAD) ---
 if menu == "🏠 Inicio":
@@ -528,6 +538,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
