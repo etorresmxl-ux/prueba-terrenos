@@ -397,7 +397,7 @@ elif menu == "📊 Detalle de Crédito":
                 if fecha_vencimiento.date() <= hoy.date():
                     estatus = "🔴 VENCIDO"
                 else:
-                    estatus = "PENDIENTE"
+                    estatus = ""
             
             amortizacion.append({
                 "Mes": i,
@@ -567,6 +567,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
