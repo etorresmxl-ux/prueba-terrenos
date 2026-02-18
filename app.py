@@ -230,14 +230,13 @@ elif menu == "📝 Ventas":
                 st.success("Venta guardada exitosamente."); st.cache_data.clear(); st.rerun()
             except Exception as e: st.error(f"Error: {e}")
 
-# --- MÓDULO: DETALLE DE CRÉDITO (CON ESTATUS DE MORA) ---
+# --- MÓDULO: DETALLE DE CRÉDITO (VISTA COMPACTA) ---
 elif menu == "📊 Detalle de Crédito":
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
     if df_v.empty: 
         st.warning("No hay ventas registradas.")
     else:
-        # Asegurar columna de estatus
         if "estatus_pago" not in df_v.columns: df_v["estatus_pago"] = "Activo"
         
         solo_activos = st.checkbox("Mostrar solo contratos activos", value=True)
@@ -248,18 +247,15 @@ elif menu == "📊 Detalle de Crédito":
         sel = st.selectbox("Seleccione Contrato", options=df_v['display'].tolist())
         d = df_v[df_v['display'] == sel].iloc[0]
         
-        # --- CÁLCULOS DE SALDOS Y PAGOS ---
+        # --- LÓGICA DE CÁLCULOS ---
         pagado = round(df_p[df_p['ubicacion'] == d['ubicacion']]['monto'].sum(), 2) if not df_p.empty else 0.0
         m_finan = float(d['precio_total']) - float(d['enganche'])
         saldo_r = m_finan - pagado
         porcentaje = min(pagado / m_finan, 1.0) if m_finan > 0 else 0
 
-        # --- LÓGICA DE ATRASO (NUEVO) ---
         hoy = datetime.now()
-        try:
-            f_con = datetime.strptime(str(d['fecha']), '%Y-%m-%d')
-        except:
-            f_con = hoy
+        try: f_con = datetime.strptime(str(d['fecha']), '%Y-%m-%d')
+        except: f_con = hoy
         
         meses_transcurridos = (hoy.year - f_con.year) * 12 + (hoy.month - f_con.month)
         debe_a_la_fecha = meses_transcurridos * float(d['mensualidad'])
@@ -267,45 +263,42 @@ elif menu == "📊 Detalle de Crédito":
         
         if monto_para_corriente > 1.0:
             estatus_txt = "🔴 ATRASADO"
+            color = "#FF4B4B" # Rojo Streamlit
             dia_pago = f_con.day
             try:
                 f_venc_mes = hoy.replace(day=dia_pago)
-                if hoy < f_venc_mes:
-                    f_venc_mes = f_venc_mes - relativedelta(months=1)
-            except:
-                f_venc_mes = hoy.replace(day=1) - relativedelta(days=1)
+                if hoy < f_venc_mes: f_venc_mes = f_venc_mes - relativedelta(months=1)
+            except: f_venc_mes = hoy.replace(day=1) - relativedelta(days=1)
             dias_atraso = (hoy - f_venc_mes).days
         else:
             estatus_txt = "🟢 AL CORRIENTE"
+            color = "#09AB3B" # Verde Streamlit
             monto_para_corriente = 0.0
             dias_atraso = 0
 
-        # --- VISUALIZACIÓN ---
-        st.subheader("📋 Información General")
+        # --- VISUALIZACIÓN COMPACTA ---
+        st.subheader("📋 Resumen del Crédito")
         
-        # Fila 1: Métricas de Saldo
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Saldo para Liquidar", fmt_moneda(saldo_r))
-        c2.metric("Total Abonado", fmt_moneda(pagado))
-        c3.metric("Progreso del Crédito", f"{int(porcentaje*100)}%")
+        # Agrupamos todo en una sola rejilla de métricas
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Saldo para Liquidar", fmt_moneda(saldo_r))
+        col2.metric("Total Abonado", fmt_moneda(pagado))
+        col3.metric("Progreso", f"{int(porcentaje*100)}%")
         st.progress(porcentaje)
 
-        # Fila 2: Métricas de Estatus (NUEVAS)
-        st.write("---")
-        ce1, ce2, ce3 = st.columns(3)
-        with ce1:
-            st.write("**Estatus de Pagos:**")
-            color = "red" if "ATRASADO" in estatus_txt else "green"
-            st.markdown(f"<h3 style='color:{color};'>{estatus_txt}</h3>", unsafe_allow_html=True)
+        # Segunda fila de métricas (Sin st.write("---") ni divisiones pesadas)
+        c_est, c_dias, c_monto = st.columns(3)
+        with c_est:
+            st.markdown(f"<p style='margin-bottom: -10px; font-size: 14px; opacity: 0.8;'>Estatus actual:</p><h2 style='color:{color}; margin-top: 0;'>{estatus_txt}</h2>", unsafe_allow_html=True)
         
-        ce2.metric("Días de Atraso", f"{dias_atraso} días")
-        ce3.metric("Monto para estar al Corriente", fmt_moneda(monto_para_corriente))
+        c_dias.metric("Días de Atraso", f"{dias_atraso} días")
+        c_monto.metric("Para estar al Corriente", fmt_moneda(monto_para_corriente))
         
         if "comentarios" in d and pd.notna(d['comentarios']) and d['comentarios'] != "":
-            st.info(f"📌 **Notas del Contrato:** {d['comentarios']}")
+            st.caption(f"📌 **Notas:** {d['comentarios']}")
 
         # --- TABLA DE AMORTIZACIÓN ---
-        st.subheader("📅 Tabla de Amortización Estimada")
+        st.subheader("📅 Plan de Pagos")
         tabla = []
         f_venc_loop = f_con
         acum_pagos = pagado
@@ -322,7 +315,7 @@ elif menu == "📊 Detalle de Crédito":
                 est = "⏳ Pendiente"
             tabla.append({"Mes": i, "Vencimiento": f_venc_loop.strftime('%d/%m/%Y'), "Cuota": cuota_fija, "Estatus": est})
         
-        st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True)
+        st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True, height=300)
 
 # --- MÓDULO: COBRANZA ---
 elif menu == "💰 Cobranza":
@@ -455,6 +448,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
