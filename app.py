@@ -71,29 +71,35 @@ if menu == "🏠 Inicio":
 
     st.divider()
     
-    # 2. Monitor de Cartera Detallado
-    st.subheader("🚩 Monitor de Cartera")
+    # 2. Monitor de Cartera con Fecha de Último Pago
+    st.subheader("🚩 Monitor de Cartera Detallado")
     if not df_ventas.empty:
         monitor = []
         hoy = datetime.now()
         
         for _, v in df_ventas.iterrows():
-            # Sumar abonos del cliente para esta ubicación
-            pagado = df_pagos[df_pagos['ubicacion'] == v['ubicacion']]['monto'].sum() if not df_pagos.empty else 0
+            # Filtrar pagos de esta ubicación
+            pagos_especificos = df_pagos[df_pagos['ubicacion'] == v['ubicacion']] if not df_pagos.empty else pd.DataFrame()
+            pagado = pagos_especificos['monto'].sum() if not pagos_especificos.empty else 0
+            
+            # --- NUEVO: Obtener Fecha del Último Pago ---
+            if not pagos_especificos.empty:
+                # Convertimos a datetime y obtenemos la máxima fecha
+                ultima_fecha = pd.to_datetime(pagos_especificos['fecha']).max().strftime('%d/%m/%Y')
+            else:
+                ultima_fecha = "Sin Pagos"
             
             # Cálculo de tiempo y deuda exigible
             f_con = pd.to_datetime(v['fecha'])
             diff = relativedelta(hoy, f_con)
             meses_transcurridos = (diff.years * 12) + diff.months
             
-            # Deuda que debería estar pagada a la fecha actual
             deuda_esperada = meses_transcurridos * float(v['mensualidad'])
             atraso_dinero = deuda_esperada - pagado
             
-            # Cálculo de Estatus y Días de Atraso
-            if atraso_dinero > 1.0: # Tolerancia de $1
+            # Estatus y Días de Atraso
+            if atraso_dinero > 1.0:
                 status = "🔴 ATRASO"
-                # Fecha en la que debió cubrirse el último pago para estar al corriente
                 ultima_fecha_vencida = f_con + relativedelta(months=meses_transcurridos)
                 dias_atraso = (hoy - ultima_fecha_vencida).days
             else:
@@ -101,13 +107,13 @@ if menu == "🏠 Inicio":
                 atraso_dinero = 0.0
                 dias_atraso = 0
             
-            # Saldo Restante (Precio Total - Enganche - Abonos)
             saldo_restante = float(v['precio_total']) - float(v['enganche']) - pagado
             
             monitor.append({
                 "Ubicación": v['ubicacion'], 
                 "Cliente": v['cliente'], 
                 "Estatus": status, 
+                "Último Pago": ultima_fecha,
                 "Días de Atraso": dias_atraso,
                 "Deuda Vencida": atraso_dinero,
                 "Saldo Restante": saldo_restante
@@ -115,7 +121,7 @@ if menu == "🏠 Inicio":
         
         df_mon = pd.DataFrame(monitor)
         
-        # Configuración visual de la tabla
+        # Mostrar tabla organizada
         st.dataframe(
             df_mon, 
             use_container_width=True, 
@@ -123,11 +129,12 @@ if menu == "🏠 Inicio":
             column_config={
                 "Deuda Vencida": st.column_config.NumberColumn(format="$ %.2f"),
                 "Saldo Restante": st.column_config.NumberColumn(format="$ %.2f"),
-                "Días de Atraso": st.column_config.NumberColumn(format="%d días")
+                "Días de Atraso": st.column_config.NumberColumn(format="%d días"),
+                "Último Pago": st.column_config.TextColumn("Fecha Último Pago")
             }
         )
     else:
-        st.info("No hay ventas registradas para generar el monitor.")
+        st.info("No hay ventas registradas.")
 
 # --- MÓDULO: VENTAS (CÓDIGO COMPLETO Y CORREGIDO) ---
 elif menu == "📝 Ventas":
@@ -684,5 +691,6 @@ elif menu == "📇 Directorio":
         # Mostramos la tabla incluyendo el ID al principio
         columnas_vista = [col_id, "nombre", "telefono", "correo"]
         st.dataframe(df_dir[columnas_vista], use_container_width=True, hide_index=True)
+
 
 
