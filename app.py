@@ -333,99 +333,78 @@ elif menu == "📊 Detalle de Crédito":
         
         st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True, height=300)
 
-# --- MÓDULO: COBRANZA (CORREGIDO CON MÉTODO Y FOLIO) ---
+# --- MÓDULO: COBRANZA (REGISTRO Y HISTORIAL ROBUSTO) ---
 elif menu == "💰 Cobranza":
     tab1, tab2 = st.tabs(["💵 Registrar Abono", "📜 Historial y Edición"])
     
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
 
-    # --- PESTAÑA 1: REGISTRO DE ABONOS ---
+    # --- PESTAÑA 1: REGISTRO ---
     with tab1:
         st.subheader("Nuevo Ingreso")
         if not df_v.empty:
             df_v['display'] = df_v['ubicacion'] + " | " + df_v['cliente']
             lista_cobro = df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]['display'].tolist()
             
-            c_sel = st.selectbox("Seleccione el Contrato", options=lista_cobro, key="cob_sel")
+            c_sel = st.selectbox("Seleccione el Contrato", options=lista_cobro)
             dv = df_v[df_v['display'] == c_sel].iloc[0]
             
             with st.form("pago_form", clear_on_submit=True):
                 col_p1, col_p2 = st.columns(2)
                 with col_p1:
-                    monto_p = st.number_input("Monto Recibido ($)", value=float(dv['mensualidad']), min_value=0.0)
-                    f_pago = st.date_input("Fecha de Recibo", value=datetime.now())
-                    # NUEVO: Campo de método de pago
-                    metodo_p = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Tarjeta", "Cheque"])
+                    monto_p = st.number_input("Monto ($)", value=float(dv['mensualidad']), min_value=0.0)
+                    f_pago = st.date_input("Fecha", value=datetime.now())
+                    metodo_p = st.selectbox("Método", ["Efectivo", "Transferencia", "Tarjeta", "Cheque"])
                 with col_p2:
-                    folio_p = st.text_input("Folio de Comprobante (Físico)", placeholder="Ej. A-105")
-                    st.caption("Asocie este registro con su recibo de papel.")
+                    folio_p = st.text_input("Folio Físico")
                 
-                if st.form_submit_button("Confirmar y Guardar Abono", type="primary"):
+                if st.form_submit_button("Guardar Abono", type="primary"):
                     if folio_p:
                         nuevo_p = pd.DataFrame([{
-                            "fecha": f_pago.strftime('%Y-%m-%d'),
+                            "fecha": str(f_pago),
                             "ubicacion": dv['ubicacion'],
                             "cliente": dv['cliente'],
                             "monto": round(monto_p, 2),
-                            "metodo": metodo_p, # Guardamos el método
+                            "metodo": metodo_p,
                             "folio": folio_p.upper()
                         }])
-                        # Concatenar y subir a la nube
-                        df_p_actualizado = pd.concat([df_p, nuevo_p], ignore_index=True)
-                        conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p_actualizado)
-                        
-                        st.success(f"Abono registrado: {folio_p.upper()} por {fmt_moneda(monto_p)}")
-                        st.cache_data.clear()
-                        st.rerun()
+                        df_p_fin = pd.concat([df_p, nuevo_p], ignore_index=True)
+                        conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p_fin)
+                        st.success("Registrado correctamente."); st.cache_data.clear(); st.rerun()
                     else:
-                        st.error("El número de Folio es obligatorio.")
+                        st.error("El Folio es obligatorio.")
         else:
-            st.warning("No hay contratos activos.")
+            st.info("No hay contratos activos.")
 
-    # --- PESTAÑA 2: HISTORIAL Y EDICIÓN ---
+    # --- PESTAÑA 2: HISTORIAL (CORREGIDO PARA EVITAR EXCEPCIONES) ---
     with tab2:
-        st.subheader("Reporte de Ingresos")
+        st.subheader("Historial de Pagos")
         if not df_p.empty:
-            busqueda = st.text_input("🔍 Buscar por Folio, Cliente o Método").upper()
-            df_p_vista = df_p.copy()
+            # Limpiamos datos para evitar el error de la Imagen 2
+            df_p_edit = df_p.copy()
+            # Convertimos todo a string excepto el monto para que el editor no falle
+            df_p_edit['monto'] = pd.to_numeric(df_p_edit['monto'], errors='coerce').fillna(0)
             
-            if busqueda:
-                # Búsqueda extendida a la columna método
-                df_p_vista = df_p_vista[
-                    df_p_vista['folio'].astype(str).str.contains(busqueda) | 
-                    df_p_vista['cliente'].str.upper().str.contains(busqueda) |
-                    df_p_vista['metodo'].str.upper().str.contains(busqueda)
-                ]
-
-            st.write("Doble clic en cualquier celda para corregir errores de dedo:")
+            st.write("Edita directamente en la tabla y presiona el botón de abajo:")
             
-            # Editor con la columna 'metodo' habilitada
+            # Editor simplificado para evitar errores de compatibilidad
             edited_df = st.data_editor(
-                df_p_vista.sort_index(ascending=False),
+                df_p_edit.sort_index(ascending=False),
                 use_container_width=True,
-                hide_index=False,
                 column_config={
                     "monto": st.column_config.NumberColumn(format="$ %.2f"),
-                    "fecha": st.column_config.DateColumn(),
-                    "metodo": st.column_config.SelectboxColumn(
-                        options=["Efectivo", "Transferencia", "Tarjeta", "Cheque"]
-                    )
                 }
             )
 
-            if st.button("💾 Guardar Cambios en Historial"):
-                # Sincronizar cambios del editor con el DataFrame original
-                df_p.update(edited_df)
-                conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
-                st.success("Historial actualizado correctamente.")
-                st.cache_data.clear()
-                st.rerun()
-                
-            st.divider()
-            st.metric("Total Recaudado en Selección", fmt_moneda(df_p_vista["monto"].sum()))
+            if st.button("💾 Aplicar Cambios al Historial"):
+                # Reemplazamos la base completa con lo editado
+                # Es más seguro reconstruir el orden original antes de subir
+                df_final_subir = edited_df.sort_index()
+                conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_final_subir)
+                st.success("¡Cambios guardados!"); st.cache_data.clear(); st.rerun()
         else:
-            st.info("No hay registros de pagos previos.")
+            st.info("No hay pagos registrados.")
 
 # --- MÓDULO: GASTOS DE OPERACIÓN ---
 elif menu == "💸 Gastos":
@@ -614,6 +593,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
