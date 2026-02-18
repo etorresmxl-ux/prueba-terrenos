@@ -45,7 +45,7 @@ menu = st.sidebar.radio(
 )
 
 # ==========================================
-# PARTE A CAMBIAR: MÓDULO INICIO
+# 🏠 MÓDULO: INICIO
 # ==========================================
 if menu == "🏠 Inicio":
     # Fila superior: Título y Fecha
@@ -60,7 +60,7 @@ if menu == "🏠 Inicio":
     df_pagos = cargar_datos("pagos")
     df_gastos = cargar_datos("gastos")
 
-    # Métricas en formato $
+    # 1. Métricas Principales
     c1, c2, c3 = st.columns(3)
     ingresos = (df_pagos["monto"].sum() if not df_pagos.empty else 0) + (df_ventas["enganche"].sum() if not df_ventas.empty else 0)
     egresos = df_gastos["monto"].sum() if not df_gastos.empty else 0
@@ -71,34 +71,63 @@ if menu == "🏠 Inicio":
 
     st.divider()
     
+    # 2. Monitor de Cartera Detallado
     st.subheader("🚩 Monitor de Cartera")
     if not df_ventas.empty:
         monitor = []
         hoy = datetime.now()
+        
         for _, v in df_ventas.iterrows():
+            # Sumar abonos del cliente para esta ubicación
             pagado = df_pagos[df_pagos['ubicacion'] == v['ubicacion']]['monto'].sum() if not df_pagos.empty else 0
-            f_con = pd.to_datetime(v['fecha'])
-            meses_trans = (relativedelta(hoy, f_con).years * 12) + relativedelta(hoy, f_con).months
-            deuda_esperada = meses_trans * float(v['mensualidad'])
-            atraso = deuda_esperada - pagado
             
-            status = "🔴 ATRASO" if atraso > 1 else "🟢 AL CORRIENTE"
+            # Cálculo de tiempo y deuda exigible
+            f_con = pd.to_datetime(v['fecha'])
+            diff = relativedelta(hoy, f_con)
+            meses_transcurridos = (diff.years * 12) + diff.months
+            
+            # Deuda que debería estar pagada a la fecha actual
+            deuda_esperada = meses_transcurridos * float(v['mensualidad'])
+            atraso_dinero = deuda_esperada - pagado
+            
+            # Cálculo de Estatus y Días de Atraso
+            if atraso_dinero > 1.0: # Tolerancia de $1
+                status = "🔴 ATRASO"
+                # Fecha en la que debió cubrirse el último pago para estar al corriente
+                ultima_fecha_vencida = f_con + relativedelta(months=meses_transcurridos)
+                dias_atraso = (hoy - ultima_fecha_vencida).days
+            else:
+                status = "🟢 AL CORRIENTE"
+                atraso_dinero = 0.0
+                dias_atraso = 0
+            
+            # Saldo Restante (Precio Total - Enganche - Abonos)
+            saldo_restante = float(v['precio_total']) - float(v['enganche']) - pagado
+            
             monitor.append({
-                "Ubicación": v['ubicacion'], "Cliente": v['cliente'], 
-                "Estatus": status, "Deuda Vencida": atraso,
-                "Saldo Restante": float(v['precio_total']) - float(v['enganche']) - pagado
+                "Ubicación": v['ubicacion'], 
+                "Cliente": v['cliente'], 
+                "Estatus": status, 
+                "Días de Atraso": dias_atraso,
+                "Deuda Vencida": atraso_dinero,
+                "Saldo Restante": saldo_restante
             })
         
-        # Tabla con formato $
+        df_mon = pd.DataFrame(monitor)
+        
+        # Configuración visual de la tabla
         st.dataframe(
-            pd.DataFrame(monitor), 
+            df_mon, 
             use_container_width=True, 
             hide_index=True,
             column_config={
                 "Deuda Vencida": st.column_config.NumberColumn(format="$ %.2f"),
-                "Saldo Restante": st.column_config.NumberColumn(format="$ %.2f")
+                "Saldo Restante": st.column_config.NumberColumn(format="$ %.2f"),
+                "Días de Atraso": st.column_config.NumberColumn(format="%d días")
             }
         )
+    else:
+        st.info("No hay ventas registradas para generar el monitor.")
 
 # --- MÓDULO: VENTAS (CÓDIGO COMPLETO Y CORREGIDO) ---
 elif menu == "📝 Ventas":
@@ -655,4 +684,5 @@ elif menu == "📇 Directorio":
         # Mostramos la tabla incluyendo el ID al principio
         columnas_vista = [col_id, "nombre", "telefono", "correo"]
         st.dataframe(df_dir[columnas_vista], use_container_width=True, hide_index=True)
+
 
