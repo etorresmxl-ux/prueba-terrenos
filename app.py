@@ -517,7 +517,7 @@ elif menu == "📍 Catálogo":
 
             # Estilo visual para la tabla
             def estilo_estatus(val):
-                color = 'green' if val == 'Disponible'
+                color = 'green' if val == 'Disponible' else 'red'
                 return f'background-color: {color}; color: white; font-weight: bold'
 
             cols = ["ubicacion", "precio", "estatus"]
@@ -662,6 +662,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
