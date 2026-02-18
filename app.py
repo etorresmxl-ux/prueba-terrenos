@@ -431,21 +431,102 @@ elif menu == "📊 Detalle de Crédito":
         )
 
 # ==========================================
-# 💰 MÓDULO: COBRANZA
+# 💰 MÓDULO: COBRANZA (Cobro Inteligente)
 # ==========================================
 elif menu == "💰 Cobranza":
-    st.title("💰 Cobranza")
-    df_p = cargar_datos("pagos")
+    st.title("💰 Registro de Cobranza")
+    
+    # Cargar bases de datos
     df_v = cargar_datos("ventas")
-    with st.form("cobro"):
-        u = st.selectbox("Lote", df_v["ubicacion"].tolist())
-        m = st.number_input("Monto ($)", min_value=0.0)
-        f = st.date_input("Fecha")
-        if st.form_submit_button("Registrar"):
-            id_p = int(df_p["id_pago"].max() + 1) if not df_p.empty else 1
-            nuevo = pd.DataFrame([{"id_pago": id_p, "fecha": f.strftime('%Y-%m-%d'), "ubicacion": u, "monto": m}])
-            conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=pd.concat([df_p, nuevo]))
-            st.success("Cobro guardado"); st.cache_data.clear(); st.rerun()
+    df_p = cargar_datos("pagos")
+
+    tab_pago, tab_historial = st.tabs(["💵 Registrar Pago", "📋 Historial de Cobros"])
+
+    with tab_pago:
+        if df_v.empty:
+            st.warning("No hay ventas registradas para procesar cobros.")
+        else:
+            # 1. SELECTOR DE CONTRATO (Ubicación | Cliente)
+            opciones_vta = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist()
+            seleccion = st.selectbox("🔍 Seleccione el Contrato que va a pagar:", ["--"] + opciones_vta)
+            
+            if seleccion != "--":
+                ubi_sel = seleccion.split(" | ")[0]
+                v = df_v[df_v["ubicacion"] == ubi_sel].iloc[0]
+                
+                # --- LÓGICA DE CÁLCULO DE MONTO SUGERIDO ---
+                # 1. Obtener lo pagado hasta hoy
+                pagos_previos = df_p[df_p["ubicacion"] == ubi_sel]["monto"].sum() if not df_p.empty else 0
+                
+                # 2. Calcular deuda a la fecha (meses transcurridos)
+                fecha_contrato = pd.to_datetime(v['fecha'])
+                hoy = datetime.now()
+                meses_transcurridos = (hoy.year - fecha_contrato.year) * 12 + (hoy.month - fecha_contrato.month)
+                meses_a_deber = max(0, min(meses_transcurridos, int(v['plazo_meses'])))
+                
+                deuda_esperada = meses_a_deber * float(v['mensualidad'])
+                saldo_vencido = max(0, deuda_esperada - pagos_previos)
+                
+                # MONTO SUGERIDO: Si debe, mostrar deuda total. Si no, solo la mensualidad.
+                if saldo_vencido > 0:
+                    monto_sugerido = saldo_vencido
+                    st.error(f"⚠️ El cliente tiene un atraso de: **{fmt_moneda(saldo_vencido)}**")
+                else:
+                    monto_sugerido = float(v['mensualidad'])
+                    st.success(f"✅ El cliente está al corriente. Mensualidad actual: **{fmt_moneda(monto_sugerido)}**")
+
+                # --- FORMULARIO DE PAGO ---
+                with st.form("form_cobranza"):
+                    st.write(f"### Registro de Pago: {v['ubicacion']}")
+                    st.write(f"**Cliente:** {v['cliente']}")
+                    
+                    c1, c2 = st.columns(2)
+                    f_fec = c1.date_input("📅 Fecha de Recepción", value=datetime.now())
+                    f_metodo = c2.selectbox("💳 Método de Pago", ["Efectivo", "Transferencia", "Depósito", "Cheque"])
+                    
+                    c1_b, c2_b = st.columns(2)
+                    f_monto = c1_b.number_input("💵 Importe a Recibir ($)", min_value=0.0, value=monto_sugerido)
+                    
+                    # Botón para refrescar el cálculo por si el usuario movió algo
+                    if c2_b.form_submit_button("🔄 Recalcular Monto"):
+                        st.rerun()
+                    
+                    f_coment = st.text_area("📝 Notas del Pago (Ej. Mensualidad #, Abono a capital, etc.)")
+
+                    if st.form_submit_button("✅ REGISTRAR COBRO", type="primary"):
+                        if f_monto <= 0:
+                            st.error("El monto debe ser mayor a $0")
+                        else:
+                            # Crear nueva fila de pago
+                            nuevo_pago = {
+                                "id_pago": int(df_p["id_pago"].max() + 1) if not df_p.empty else 1,
+                                "fecha": f_fec.strftime('%Y-%m-%d'),
+                                "ubicacion": ubi_sel,
+                                "cliente": v['cliente'],
+                                "monto": f_monto,
+                                "metodo": f_metodo,
+                                "comentarios": f_coment
+                            }
+                            
+                            df_p = pd.concat([df_p, pd.DataFrame([nuevo_pago])], ignore_index=True)
+                            
+                            # Subir a Google Sheets
+                            conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
+                            
+                            st.success(f"¡Pago de {fmt_moneda(f_monto)} registrado correctamente!")
+                            st.cache_data.clear()
+                            st.rerun()
+
+    with tab_historial:
+        if not df_p.empty:
+            # Mostrar solo pagos de la ubicación seleccionada arriba si existe
+            if seleccion != "--":
+                st.write(f"**Filtrando historial para:** {ubi_sel}")
+                st.dataframe(df_p[df_p["ubicacion"] == ubi_sel], use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(df_p, use_container_width=True, hide_index=True)
+        else:
+            st.info("No hay historial de cobros aún.")
 
 # ==========================================
 # 💸 MÓDULO: GASTOS
@@ -488,6 +569,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
