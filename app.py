@@ -333,7 +333,7 @@ elif menu == "📊 Detalle de Crédito":
         
         st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True, height=300)
 
-# --- MÓDULO: COBRANZA (REGISTRO Y EDICIÓN CON FOLIO) ---
+# --- MÓDULO: COBRANZA (CORREGIDO CON MÉTODO Y FOLIO) ---
 elif menu == "💰 Cobranza":
     tab1, tab2 = st.tabs(["💵 Registrar Abono", "📜 Historial y Edición"])
     
@@ -344,7 +344,6 @@ elif menu == "💰 Cobranza":
     with tab1:
         st.subheader("Nuevo Ingreso")
         if not df_v.empty:
-            # Solo mostrar contratos activos para cobrar
             df_v['display'] = df_v['ubicacion'] + " | " + df_v['cliente']
             lista_cobro = df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]['display'].tolist()
             
@@ -356,6 +355,8 @@ elif menu == "💰 Cobranza":
                 with col_p1:
                     monto_p = st.number_input("Monto Recibido ($)", value=float(dv['mensualidad']), min_value=0.0)
                     f_pago = st.date_input("Fecha de Recibo", value=datetime.now())
+                    # NUEVO: Campo de método de pago
+                    metodo_p = st.selectbox("Método de Pago", ["Efectivo", "Transferencia", "Tarjeta", "Cheque"])
                 with col_p2:
                     folio_p = st.text_input("Folio de Comprobante (Físico)", placeholder="Ej. A-105")
                     st.caption("Asocie este registro con su recibo de papel.")
@@ -367,51 +368,54 @@ elif menu == "💰 Cobranza":
                             "ubicacion": dv['ubicacion'],
                             "cliente": dv['cliente'],
                             "monto": round(monto_p, 2),
+                            "metodo": metodo_p, # Guardamos el método
                             "folio": folio_p.upper()
                         }])
-                        conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=pd.concat([df_p, nuevo_p], ignore_index=True))
-                        st.success(f"Abono registrado con Folio: {folio_p.upper()}")
+                        # Concatenar y subir a la nube
+                        df_p_actualizado = pd.concat([df_p, nuevo_p], ignore_index=True)
+                        conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p_actualizado)
+                        
+                        st.success(f"Abono registrado: {folio_p.upper()} por {fmt_moneda(monto_p)}")
                         st.cache_data.clear()
                         st.rerun()
                     else:
-                        st.error("El número de Folio es obligatorio para el control interno.")
+                        st.error("El número de Folio es obligatorio.")
         else:
-            st.warning("No hay contratos activos para registrar cobros.")
+            st.warning("No hay contratos activos.")
 
     # --- PESTAÑA 2: HISTORIAL Y EDICIÓN ---
     with tab2:
         st.subheader("Reporte de Ingresos")
         if not df_p.empty:
-            # Buscador por Folio o Cliente
-            busqueda = st.text_input("🔍 Buscar por Folio o Cliente").upper()
+            busqueda = st.text_input("🔍 Buscar por Folio, Cliente o Método").upper()
             df_p_vista = df_p.copy()
             
             if busqueda:
+                # Búsqueda extendida a la columna método
                 df_p_vista = df_p_vista[
                     df_p_vista['folio'].astype(str).str.contains(busqueda) | 
-                    df_p_vista['cliente'].str.upper().str.contains(busqueda)
+                    df_p_vista['cliente'].str.upper().str.contains(busqueda) |
+                    df_p_vista['metodo'].str.upper().str.contains(busqueda)
                 ]
 
-            st.write("Seleccione un registro de la tabla para modificarlo:")
+            st.write("Doble clic en cualquier celda para corregir errores de dedo:")
             
-            # Formatear montos para la vista
-            df_p_vista = df_p_vista.sort_index(ascending=False) # Ver los más recientes arriba
-            
-            # Editor de tabla (Data Editor)
-            # El usuario puede cambiar los datos directamente en la tabla
+            # Editor con la columna 'metodo' habilitada
             edited_df = st.data_editor(
-                df_p_vista,
+                df_p_vista.sort_index(ascending=False),
                 use_container_width=True,
-                hide_index=False, # Mostramos el índice para rastrear el cambio
+                hide_index=False,
                 column_config={
                     "monto": st.column_config.NumberColumn(format="$ %.2f"),
                     "fecha": st.column_config.DateColumn(),
-                    "folio": st.column_config.TextColumn(help="Haga doble clic para editar")
+                    "metodo": st.column_config.SelectboxColumn(
+                        options=["Efectivo", "Transferencia", "Tarjeta", "Cheque"]
+                    )
                 }
             )
 
             if st.button("💾 Guardar Cambios en Historial"):
-                # Actualizamos la base original con los datos editados
+                # Sincronizar cambios del editor con el DataFrame original
                 df_p.update(edited_df)
                 conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
                 st.success("Historial actualizado correctamente.")
@@ -610,6 +614,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
