@@ -62,9 +62,6 @@ with st.sidebar:
     else:
         st.sidebar.error("❌ Desconectado (Falta URL)")
 
-    st.divider()
-    st.info("Versión Personalizada 2026")
-
 # ==========================================
 # 🏠 MÓDULO: INICIO
 # ==========================================
@@ -362,6 +359,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
