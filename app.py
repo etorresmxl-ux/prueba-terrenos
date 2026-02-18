@@ -4,11 +4,10 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from streamlit_gsheets import GSheetsConnection
 
-# --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Sistema Inmobiliario Pro", layout="wide")
+# --- 1. CONFIGURACIÓN Y CONEXIÓN (LOS CIMIENTOS) ---
+st.set_page_config(page_title="Sistema Inmobiliario", layout="wide")
 
-# --- CONEXIÓN Y CARGA DE DATOS ---
-URL_SHEET = "TU_URL_DE_GOOGLE_SHEETS_AQUÍ" # Reemplaza con tu URL
+URL_SHEET = "TU_URL_DE_GOOGLE_SHEETS" 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def cargar_datos(worksheet_name):
@@ -20,19 +19,21 @@ def cargar_datos(worksheet_name):
 def fmt_moneda(valor):
     return f"$ {valor:,.2f}"
 
-# --- BARRA LATERAL (MENÚ) ---
+# --- 2. MENÚ LATERAL (EL ORDEN QUE SOLICITASTE) ---
 with st.sidebar:
-    st.title("🏢 Gestión Inmobiliaria")
+    st.title("🏢 Panel de Control")
     menu = st.radio("Menú Principal", [
         "🏠 Inicio", 
-        "📍 Catálogo", 
-        "📇 Directorio", 
         "📝 Ventas", 
+        "📊 Detalle de Crédito", 
         "💰 Cobranza", 
-        "📊 Detalle de Crédito",
-        "💸 Gastos"
+        "💸 Gastos", 
+        "📍 Ubicaciones", 
+        "👥 Clientes"
     ])
-    st.info("Versión 2.0 - Estatus Convencional")
+    st.info("Versión Personalizada 2026")
+
+# --- 3. EJECUCIÓN DE MÓDULOS (ORDENADOS SEGÚN EL MENÚ) ---
 
 # ==========================================
 # 🏠 MÓDULO: INICIO
@@ -723,3 +724,4 @@ elif menu == "📇 Directorio":
             st.table(df_vd[["id_vendedor", "nombre", "telefono", "comision_base", "estatus"]])
         else:
             st.info("No hay vendedores registrados en el equipo.")
+
