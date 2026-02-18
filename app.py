@@ -321,76 +321,80 @@ elif menu == "📝 Ventas":
         st.dataframe(df_v, use_container_width=True, hide_index=True)
 
 # ==========================================
-# 📊 MÓDULO: DETALLE DE CRÉDITO (Reconstruido)
+# 📊 MÓDULO: DETALLE DE CRÉDITO (Actualizado)
 # ==========================================
 elif menu == "📊 Detalle de Crédito":
-    st.title("📊 Detalle de Crédito y Tabla de Amortización")
+    st.title("📊 Detalle de Crédito y Estado de Cuenta")
     
-    # Cargar datos
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
 
     if df_v.empty:
-        st.warning("No hay ventas registradas para mostrar detalles.")
+        st.warning("No hay ventas registradas.")
     else:
-        # 1. SELECTOR DE CONTRATO (Ubicación | Cliente)
+        # 1. SELECTOR DE CONTRATO
         opciones_vta = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist()
-        seleccion = st.selectbox("🔍 Seleccione un Contrato para ver detalle:", opciones_vta)
+        seleccion = st.selectbox("🔍 Seleccione un Contrato:", opciones_vta)
         
-        # Obtener datos de la venta seleccionada
         ubi_sel = seleccion.split(" | ")[0]
         v = df_v[df_v["ubicacion"] == ubi_sel].iloc[0]
         
-        # Cálculos Financieros
-        # Buscamos todos los pagos hechos para esta ubicación
+        # --- CÁLCULOS FINANCIEROS REALES ---
         pagos_cliente = df_p[df_p["ubicacion"] == ubi_sel] if not df_p.empty else pd.DataFrame()
-        total_pagado_mensualidades = pagos_cliente["monto"].sum() if not pagos_cliente.empty else 0
+        total_pagado_historico = pagos_cliente["monto"].sum() if not pagos_cliente.empty else 0
         
         precio_vta = float(v['precio_total'])
         enganche_vta = float(v['enganche'])
-        saldo_inicial_credito = precio_vta - enganche_vta
-        saldo_restante_actual = saldo_inicial_credito - total_pagado_mensualidades
+        monto_credito = precio_vta - enganche_vta
+        mensualidad_pactada = float(v['mensualidad'])
+        fecha_contrato = pd.to_datetime(v['fecha'])
+        hoy = datetime.now()
+
+        # Calcular cuánto debería haber pagado a la fecha de hoy
+        meses_transcurridos = (hoy.year - fecha_contrato.year) * 12 + (hoy.month - fecha_contrato.month)
+        # Limitar meses transcurridos al plazo máximo del contrato
+        meses_a_deber = max(0, min(meses_transcurridos, int(v['plazo_meses'])))
+        deuda_a_la_fecha = meses_a_deber * mensualidad_pactada
+        
+        # Saldo Vencido (Lo que debería haber pagado menos lo que pagó)
+        saldo_vencido = max(0, deuda_a_la_fecha - total_pagado_historico)
+        saldo_restante_total = monto_credito - total_pagado_historico
 
         # --- SECCIÓN: INFORMACIÓN GENERAL ---
-        st.markdown("### 📋 Información General del Contrato")
-        c1, c2, c3, c4 = st.columns(4)
+        st.markdown("### 📋 Resumen del Crédito")
+        c1, c2, c3 = st.columns(3)
         
-        c1.markdown(f"**📍 Ubicación:**\n{v['ubicacion']}")
-        c1.markdown(f"**👤 Cliente:**\n{v['cliente']}")
-        
-        c2.markdown(f"**📅 Fecha Contrato:**\n{v['fecha']}")
-        c2.markdown(f"**🕒 Plazo:**\n{int(v['plazo_meses'])} meses")
-        
-        c3.markdown(f"**💵 Costo Total:**\n{fmt_moneda(precio_vta)}")
-        c3.markdown(f"**📥 Enganche:**\n{fmt_moneda(enganche_vta)}")
-        
-        c4.markdown(f"**💳 Mensualidad:**\n{fmt_moneda(v['mensualidad'])}")
-        c4.write("") # Espacio
-        c4.metric("Saldo Restante", fmt_moneda(saldo_restante_actual), delta_color="inverse")
+        with c1:
+            st.write(f"**📍 Ubicación:** {v['ubicacion']}")
+            st.write(f"**👤 Cliente:** {v['cliente']}")
+            st.write(f"**📅 Contrato:** {v['fecha']}")
+
+        with c2:
+            st.write(f"**💵 Costo Total:** {fmt_moneda(precio_vta)}")
+            st.write(f"**📥 Enganche:** {fmt_moneda(enganche_vta)}")
+            st.metric("Total Pagado", fmt_moneda(total_pagado_historico))
+
+        with c3:
+            st.write(f"**💳 Mensualidad:** {fmt_moneda(mensualidad_pactada)}")
+            st.metric("Saldo Vencido", fmt_moneda(saldo_vencido), delta="¡Atraso!" if saldo_vencido > 0 else "Al día", delta_color="inverse")
+            st.write(f"**Saldo Restante Total:** {fmt_moneda(saldo_restante_total)}")
 
         st.divider()
 
-        # --- SECCIÓN: TABLA DE AMORTIZACIÓN PROYECTADA ---
-        st.subheader("📅 Plan de Pagos y Estatus")
+        # --- SECCIÓN: TABLA DE AMORTIZACIÓN ---
+        st.subheader("📅 Plan de Pagos Mensuales")
         
-        # Crear la tabla de amortización dinámicamente
         amortizacion = []
-        fecha_inicio = pd.to_datetime(v['fecha'])
-        monto_mensualidad = float(v['mensualidad'])
-        saldo_acumulado = saldo_inicial_credito
-        
-        # Dinero total que el cliente ha pagado hasta hoy (acumulado para comparar)
-        bolsa_pagos = total_pagado_mensualidades
+        bolsa_pagos = total_pagado_historico
 
         for i in range(1, int(v['plazo_meses']) + 1):
-            # Calcular fecha de cada mes (sumando i meses a la fecha de contrato)
-            fecha_pago = fecha_inicio + relativedelta(months=i)
+            fecha_pago = fecha_contrato + relativedelta(months=i)
             
-            # Determinar si esta mensualidad está cubierta por lo que ha pagado el cliente
+            # Cálculo de cuánto se cubrió de esta mensualidad
             pago_realizado = 0.0
-            if bolsa_pagos >= monto_mensualidad:
-                pago_realizado = monto_mensualidad
-                bolsa_pagos -= monto_mensualidad
+            if bolsa_pagos >= mensualidad_pactada:
+                pago_realizado = mensualidad_pactada
+                bolsa_pagos -= mensualidad_pactada
                 estatus = "🟢 PAGADO"
             elif bolsa_pagos > 0:
                 pago_realizado = bolsa_pagos
@@ -400,39 +404,34 @@ elif menu == "📊 Detalle de Crédito":
                 pago_realizado = 0.0
                 estatus = "🔴 PENDIENTE"
             
-            saldo_acumulado -= pago_realizado
+            # Nueva columna: Pago para estar al corriente
+            # (Es el importe de la mensualidad menos lo que ya se abonó en ese mes)
+            falta_para_corriente = mensualidad_pactada - pago_realizado
             
             amortizacion.append({
                 "Mes": i,
-                "Fecha Programada": fecha_pago.strftime('%d/%m/%Y'),
-                "Concepto": f"Mensualidad {i}/{int(v['plazo_meses'])}",
-                "Importe": monto_mensualidad,
-                "Abonado": pago_realizado,
+                "Fecha de Pago": fecha_pago.strftime('%d/%m/%Y'),
+                "Concepto": f"Mensualidad {i}",
+                "Importe": mensualidad_pactada,
+                "Pago Realizado": pago_realizado,
                 "Estatus": estatus,
-                "Saldo Pendiente": max(0, saldo_acumulado)
+                "Falta para estar al Corriente": falta_para_corriente
             })
 
-        # Convertir a DataFrame para mostrar
         df_tab = pd.DataFrame(amortizacion)
         
-        # Mostrar tabla con formato
+        # Configuración de la tabla
         st.dataframe(
             df_tab, 
             use_container_width=True, 
             hide_index=True,
             column_config={
                 "Importe": st.column_config.NumberColumn(format="$ %.2f"),
-                "Abonado": st.column_config.NumberColumn(format="$ %.2f"),
-                "Saldo Pendiente": st.column_config.NumberColumn(format="$ %.2f"),
-                "Estatus": st.column_config.TextColumn(help="Verde: Cubierto | Amarillo: Incompleto | Rojo: Sin pago")
+                "Pago Realizado": st.column_config.NumberColumn(format="$ %.2f"),
+                "Falta para estar al Corriente": st.column_config.NumberColumn(format="$ %.2f"),
+                "Estatus": st.column_config.TextColumn()
             }
         )
-
-        # --- RESUMEN FINAL ---
-        st.write("---")
-        ra, rb = st.columns(2)
-        ra.write(f"**Total Pagado a la fecha:** {fmt_moneda(total_pagado_mensualidades)}")
-        rb.write(f"**Monto total del crédito original:** {fmt_moneda(saldo_inicial_credito)}")
 
 # ==========================================
 # 💰 MÓDULO: COBRANZA
@@ -492,6 +491,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
