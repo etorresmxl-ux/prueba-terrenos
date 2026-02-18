@@ -588,7 +588,7 @@ elif menu == "📍 Ubicaciones":
     # --- FILTRO TIPO SWITCH ---
     # Usamos un checkbox con estilo de switch para filtrar la tabla
     col_f1, col_f2 = st.columns([1, 3])
-    ver_vendidos = col_f1.toggle("Lotes Disponibles", value=True)
+    ver_vendidos = col_f1.toggle("Ocultar Lotes Vendidos", value=True)
 
     df_mostrar = df_u.copy()
     if not ver_vendidos:
@@ -688,6 +688,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
