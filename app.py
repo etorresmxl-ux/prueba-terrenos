@@ -498,7 +498,7 @@ elif menu == "💸 Comisiones":
                 conn.update(spreadsheet=URL_SHEET, worksheet="pagos_comisiones", data=pd.concat([df_pc, nuevo], ignore_index=True))
                 st.success("Pagado"); st.cache_data.clear(); st.rerun()
 
-# --- MÓDULO: CATALOGO (INVENTARIO Y ALTAS) ---
+# --- MÓDULO: CATALOGO (VISTA LIMPIA Y MINIMALISTA) ---
 elif menu == "📍 Catálogo":
     tab_cat1, tab_cat2 = st.tabs(["📋 Ver Inventario", "🏗️ Gestionar Lotes"])
     
@@ -508,17 +508,17 @@ elif menu == "📍 Catálogo":
     with tab_cat1:
         st.subheader("Estado Actual del Inventario")
         if not df_cat.empty:
-            # Filtro toggle para limpieza visual
             solo_disponibles = st.toggle("Mostrar solo disponibles", value=True)
             
             df_mostrar = df_cat.copy()
             if solo_disponibles:
                 df_mostrar = df_mostrar[df_mostrar["estatus"] == "Disponible"]
 
-            # Estilo visual para la tabla
+            # Lógica de colores: Solo verde para disponibles, el resto sin fondo
             def estilo_estatus(val):
-                color = 'green' if val == 'Disponible' else 'red'
-                return f'background-color: {color}; color: white; font-weight: bold'
+                if val == 'Disponible':
+                    return 'background-color: #09AB3B; color: white; font-weight: bold'
+                return 'color: #808495' # Gris suave para vendidos/apartados, sin fondo de color
 
             cols = ["ubicacion", "precio", "estatus"]
             st.dataframe(
@@ -527,69 +527,53 @@ elif menu == "📍 Catálogo":
                 use_container_width=True,
                 column_config={
                     "precio": st.column_config.NumberColumn("Precio de Lista", format="$ %.2f"),
-                    "ubicacion": "Identificador de Lote",
-                    "estatus": "Disponibilidad"
+                    "ubicacion": "Lote",
+                    "estatus": "Estado"
                 }
             )
             
             # Métricas rápidas
             c_m1, c_m2 = st.columns(2)
             c_m1.metric("Lotes Disponibles", len(df_cat[df_cat["estatus"] == "Disponible"]))
-            c_m2.metric("Valor Total Inventario", fmt_moneda(df_cat[df_cat["estatus"] == "Disponible"]["precio"].sum()))
+            c_m2.metric("Valor Total Disponible", fmt_moneda(df_cat[df_cat["estatus"] == "Disponible"]["precio"].sum()))
         else:
-            st.info("No hay ubicaciones registradas en la base de datos.")
+            st.info("No hay ubicaciones registradas.")
 
     # --- PESTAÑA 2: ALTAS Y EDICIONES ---
     with tab_cat2:
         st.subheader("Control de Inventario")
         
-        # Formulario para agregar nuevo lote
-        with st.expander("➕ Dar de alta nuevo Lote/Ubicación"):
+        with st.expander("➕ Dar de alta nuevo Lote"):
             with st.form("nuevo_lote"):
-                n_ubi = st.text_input("Nombre de la Ubicación (ej: Lote 15, Mz 4)")
-                n_pre = st.number_input("Precio de Lista ($)", min_value=0.0, step=5000.0)
+                n_ubi = st.text_input("Identificador (ej: L-01)")
+                n_pre = st.number_input("Precio ($)", min_value=0.0, step=1000.0)
                 n_est = st.selectbox("Estatus Inicial", ["Disponible", "Vendido", "Apartado"])
                 
                 if st.form_submit_button("Guardar en Inventario"):
                     if n_ubi and n_pre > 0:
-                        # Crear ID correlativo
                         nuevo_id = int(df_cat["id_ubi"].max()) + 1 if (not df_cat.empty and "id_ubi" in df_cat.columns) else 1
-                        nuevo_reg = pd.DataFrame([{
-                            "id_ubi": nuevo_id,
-                            "ubicacion": n_ubi,
-                            "precio": n_pre,
-                            "estatus": n_est
-                        }])
-                        # Actualizar Google Sheets
-                        df_cat_final = pd.concat([df_cat, nuevo_reg], ignore_index=True)
-                        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_cat_final)
-                        st.success(f"Ubicación '{n_ubi}' agregada exitosamente.")
-                        st.cache_data.clear()
-                        st.rerun()
-                    else:
-                        st.error("Por favor ingresa nombre y precio válido.")
+                        nuevo_reg = pd.DataFrame([{"id_ubi": nuevo_id, "ubicacion": n_ubi, "precio": n_pre, "estatus": n_est}])
+                        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=pd.concat([df_cat, nuevo_reg], ignore_index=True))
+                        st.success("Lote agregado."); st.cache_data.clear(); st.rerun()
 
         st.divider()
         
-        # Opción de edición rápida de precios
-        st.write("🔧 **Edición Rápida de Precios y Estatus**")
         if not df_cat.empty:
+            st.write("🔧 **Edición de Inventario**")
             edited_cat = st.data_editor(
                 df_cat,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "id_ubi": None, # Ocultamos el ID para que no lo muevan
+                    "id_ubi": None,
                     "precio": st.column_config.NumberColumn(format="$ %.2f"),
                     "estatus": st.column_config.SelectboxColumn(options=["Disponible", "Vendido", "Apartado"])
                 }
             )
             
-            if st.button("💾 Guardar Cambios en Catálogo"):
+            if st.button("💾 Guardar Cambios"):
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=edited_cat)
-                st.success("Catálogo actualizado correctamente.")
-                st.cache_data.clear()
-                st.rerun()
+                st.success("Sincronizado."); st.cache_data.clear(); st.rerun()
 
 # --- MÓDULO: DIRECTORIO (EDITOR DE CONTACTOS) ---
 elif menu == "📇 Directorio":
@@ -662,6 +646,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
