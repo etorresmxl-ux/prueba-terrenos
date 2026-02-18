@@ -9,7 +9,7 @@ st.set_page_config(page_title="Inmobiliaria Pro", layout="wide")
 
 # 2. CONEXIÓN A GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
-# Reemplaza esta URL por la de tu Google Sheets si es distinta
+
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/edit#gid=0"
 
 # --- FUNCIÓN PARA FORMATO DE MONEDA ($) ---
@@ -29,7 +29,7 @@ def cargar_datos(pestana):
         return pd.DataFrame()
 
 # ==========================================
-# 🛠️ BARRA LATERAL: NAVEGACIÓN Y ESTADO
+# 🛠️ BARRA LATERAL
 # ==========================================
 with st.sidebar:
     st.title("🏢 Panel de Gestión")
@@ -156,7 +156,7 @@ if menu == "🏠 Inicio":
         st.info("No hay ventas registradas.")
 
 # ==========================================
-# 📝 MÓDULO: VENTAS (Diseño Equilibrado)
+# 📝 MÓDULO: VENTAS
 # ==========================================
 elif menu == "📝 Ventas":
     st.title("📝 Gestión de Ventas")
@@ -321,7 +321,7 @@ elif menu == "📝 Ventas":
         st.dataframe(df_v, use_container_width=True, hide_index=True)
 
 # ==========================================
-# 📊 MÓDULO: DETALLE DE CRÉDITO (Estatus Inteligente)
+# 📊 MÓDULO: DETALLE DE CRÉDITO
 # ==========================================
 elif menu == "📊 Detalle de Crédito":
     st.title("📊 Detalle de Crédito y Estado de Cuenta")
@@ -423,7 +423,7 @@ elif menu == "📊 Detalle de Crédito":
         )
 
 # ==========================================
-# 💰 MÓDULO: COBRANZA (Versión Final Corregida)
+# 💰 MÓDULO: COBRANZA
 # ==========================================
 elif menu == "💰 Cobranza":
     st.title("💰 Gestión de Cobranza")
@@ -577,7 +577,7 @@ elif menu == "💸 Gastos":
             st.success("Gasto guardado"); st.cache_data.clear(); st.rerun()
 
 # ==========================================
-# 📍 MÓDULO: UBICACIONES (ID Oculto en Vista)
+# 📍 MÓDULO: UBICACIONES
 # ==========================================
 elif menu == "📍 Ubicaciones":
     st.title("📍 Control de Inventario")
@@ -702,6 +702,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
