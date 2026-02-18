@@ -177,66 +177,80 @@ if menu == "🏠 Inicio":
     else:
         st.info("No hay datos para mostrar.")
 
-# --- MÓDULO: VENTAS ---
+# --- MÓDULO: VENTAS (COMPATIBLE CON NUEVOS ESTATUS) ---
 elif menu == "📝 Ventas":
-    st.subheader("Generación de Nuevo Contrato")
-    df_ubi = cargar_datos("ubicaciones")
-    df_cli = cargar_datos("clientes")
-    df_ven = cargar_datos("vendedores")
-    lista_ubi = df_ubi[df_ubi['estatus'] == 'Disponible']['ubicacion'].tolist() if not df_ubi.empty else []
+    st.subheader("Registro de Nuevos Contratos")
+    df_v = cargar_datos("ventas")
+    df_u = cargar_datos("ubicaciones")
+    df_cl = cargar_datos("clientes")
+    df_vd = cargar_datos("vendedores")
 
-    if not lista_ubi:
-        st.warning("No hay ubicaciones disponibles.")
-    else:
-        col1, col2 = st.columns(2)
-        with col1:
-            u_sel = st.selectbox("Seleccione la Ubicación", options=lista_ubi)
-            opciones_cli = ["+ Agregar Nuevo Cliente"] + (df_cli["nombre"].tolist() if not df_cli.empty else [])
-            c_sel = st.selectbox("Cliente", options=opciones_cli)
-            c_nombre = st.text_input("Nombre del Nuevo Cliente") if c_sel == "+ Agregar Nuevo Cliente" else c_sel
+    with st.expander("➕ Registrar Nueva Venta", expanded=not df_v.empty):
+        with st.form("form_ventas", clear_on_submit=True):
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                # Filtrar solo lotes disponibles para vender
+                lotes_disp = df_u[df_u["estatus"] == "Disponible"]["ubicacion"].tolist()
+                f_lote = st.selectbox("Lote/Ubicación", options=lotes_disp)
+                # Incluimos el ID del cliente en la selección como pediste
+                df_cl['display'] = df_cl['id_cliente'].astype(str) + " | " + df_cl['nombre']
+                f_cliente = st.selectbox("Cliente", options=df_cl['display'].tolist())
+            with c2:
+                f_vendedor = st.selectbox("Vendedor", options=df_vd['nombre'].tolist())
+                f_fecha = st.date_input("Fecha de Contrato", value=datetime.now())
+                f_total = st.number_input("Precio Total ($)", min_value=0.0, step=1000.0)
+            with c3:
+                f_enganche = st.number_input("Enganche ($)", min_value=0.0, step=1000.0)
+                f_plazo = st.number_input("Plazo (Meses)", min_value=1, step=1, value=12)
+                # Cálculo automático de mensualidad
+                f_mensualidad = (f_total - f_enganche) / f_plazo if f_plazo > 0 else 0
+                st.write(f"**Mensualidad Sugerida:** {fmt_moneda(f_mensualidad)}")
+
+            f_comenta = st.text_area("Notas del Contrato")
             
-            opciones_ven = ["+ Agregar Nuevo Vendedor"] + (df_ven["nombre"].tolist() if not df_ven.empty else [])
-            v_sel = st.selectbox("Vendedor", options=opciones_ven)
-            vn_nombre = st.text_input("Nombre del Nuevo Vendedor") if v_sel == "+ Agregar Nuevo Vendedor" else v_sel
-            v_fecha = st.date_input("Fecha", value=datetime.now())
-        with col2:
-            fila_ubi = df_ubi[df_ubi['ubicacion'] == u_sel]
-            v_precio = st.number_input("Precio Final ($)", value=float(fila_ubi['precio'].values[0]) if not fila_ubi.empty else 0.0)
-            v_enganche = st.number_input("Enganche ($)", min_value=0.0)
-            v_plazo = st.number_input("Plazo (Meses)", min_value=1, value=48)
-            v_comision = st.number_input("Comisión ($)", min_value=0.0)
-            mensual = round((v_precio - v_enganche) / v_plazo, 2) if v_plazo > 0 else 0
-            st.metric("Mensualidad", fmt_moneda(mensual))
-        
-        v_comentarios = st.text_area("Comentarios / Referencias")
+            if st.form_submit_button("Cerrar Venta", type="primary"):
+                if f_total > f_enganche:
+                    # Crear nuevo registro
+                    nueva_v = pd.DataFrame([{
+                        "id_venta": int(df_v["id_venta"].max()) + 1 if not df_v.empty else 1,
+                        "fecha": f_fecha.strftime('%Y-%m-%d'),
+                        "ubicacion": f_lote,
+                        "cliente": f_cliente.split(" | ")[1], # Guardamos solo el nombre
+                        "vendedor": f_vendedor,
+                        "precio_total": round(f_total, 2),
+                        "enganche": round(f_enganche, 2),
+                        "plazo_meses": f_plazo,
+                        "mensualidad": round(f_mensualidad, 2),
+                        "comision": 0, # Se calcula en el módulo de comisiones
+                        "comentarios": f_comenta,
+                        "estatus_pago": "Activo" # Estatus inicial para seguimiento
+                    }])
+                    
+                    # 1. Guardar Venta
+                    conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v, nueva_v], ignore_index=True))
+                    
+                    # 2. Actualizar estatus del lote a "Vendido"
+                    df_u.loc[df_u["ubicacion"] == f_lote, "estatus"] = "Vendido"
+                    conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+                    
+                    st.success(f"¡Venta del lote {f_lote} registrada con éxito!"); st.cache_data.clear(); st.rerun()
+                else:
+                    st.error("El precio total debe ser mayor al enganche.")
 
-        if st.button("Confirmar Venta", type="primary"):
-            try:
-                if c_sel == "+ Agregar Nuevo Cliente" and c_nombre:
-                    new_id_c = int(df_cli["id_cliente"].max()) + 1 if (not df_cli.empty and "id_cliente" in df_cli.columns) else 1
-                    df_new_c = pd.DataFrame([{"id_cliente": new_id_c, "nombre": c_nombre, "telefono": "", "correo": ""}])
-                    conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cli, df_new_c], ignore_index=True))
-                if v_sel == "+ Agregar Nuevo Vendedor" and vn_nombre:
-                    new_id_vnd = int(df_ven["id_vendedor"].max()) + 1 if (not df_ven.empty and "id_vendedor" in df_ven.columns) else 1
-                    df_new_v = pd.DataFrame([{"id_vendedor": new_id_vnd, "nombre": vn_nombre, "telefono": "", "correo": ""}])
-                    conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=pd.concat([df_ven, df_new_v], ignore_index=True))
-
-                df_v_act = cargar_datos("ventas")
-                nuevo_id_v = int(df_v_act["id_venta"].max()) + 1 if (not df_v_act.empty and "id_venta" in df_v_act.columns) else 1
-                
-                nueva_v = pd.DataFrame([{
-                    "id_venta": nuevo_id_v, "fecha": v_fecha.strftime('%Y-%m-%d'), "ubicacion": u_sel, 
-                    "cliente": c_nombre, "vendedor": vn_nombre, "precio_total": round(v_precio, 2), 
-                    "enganche": round(v_enganche, 2), "plazo_meses": int(v_plazo), 
-                    "mensualidad": round(mensual, 2), "comision": round(v_comision, 2),
-                    "comentarios": v_comentarios, "estatus_pago": "Activo"
-                }])
-                
-                df_ubi.loc[df_ubi['ubicacion'] == u_sel, 'estatus'] = 'Vendido'
-                conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v_act, nueva_v], ignore_index=True))
-                conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
-                st.success("Venta guardada exitosamente."); st.cache_data.clear(); st.rerun()
-            except Exception as e: st.error(f"Error: {e}")
+    st.divider()
+    st.subheader("Historial de Contratos")
+    if not df_v.empty:
+        # Mostramos la tabla de ventas con los montos en formato $
+        st.dataframe(
+            df_v,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "precio_total": st.column_config.NumberColumn(format="$ %.2f"),
+                "enganche": st.column_config.NumberColumn(format="$ %.2f"),
+                "mensualidad": st.column_config.NumberColumn(format="$ %.2f"),
+            }
+        )
 
 # --- MÓDULO: DETALLE DE CRÉDITO (VISTA COMPACTA) ---
 elif menu == "📊 Detalle de Crédito":
@@ -671,5 +685,6 @@ elif menu == "📇 Directorio":
         # Mostramos la tabla incluyendo el ID al principio
         columnas_vista = [col_id, "nombre", "telefono", "correo"]
         st.dataframe(df_dir[columnas_vista], use_container_width=True, hide_index=True)
+
 
 
