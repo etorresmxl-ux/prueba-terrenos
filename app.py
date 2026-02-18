@@ -691,18 +691,110 @@ elif menu == "📍 Ubicaciones":
 # 👥 MÓDULO: CLIENTES
 # ==========================================
 elif menu == "👥 Clientes":
-    st.title("👥 Clientes")
-    df_cl = cargar_datos("clientes")
-    with st.form("cli"):
-        n = st.text_input("Nombre")
-        t = st.text_input("Teléfono")
-        if st.form_submit_button("Agregar"):
-            id_c = int(df_cl["id_cliente"].max() + 1) if not df_cl.empty else 1
-            nuevo = pd.DataFrame([{"id_cliente": id_c, "nombre": n, "telefono": t}])
-            conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
-            st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
-    st.dataframe(df_cl, use_container_width=True, hide_index=True)
+    st.title("👥 Gestión de Clientes")
+    
+    # Cargar base de datos
+    df_c = cargar_datos("clientes")
 
+    # --- VISTA GENERAL ---
+    st.write("### 🔍 Directorio de Clientes")
+    if not df_c.empty:
+        # Ocultamos el 'id_cliente' para una vista más limpia
+        columnas_visibles = ["nombre", "telefono", "correo", "direccion", "notas"]
+        cols_existentes = [c for c in columnas_visibles if c in df_c.columns]
+        st.dataframe(df_c[cols_existentes], use_container_width=True, hide_index=True)
+    else:
+        st.info("No hay clientes registrados.")
 
+    tab_nuevo, tab_editar = st.tabs(["✨ Agregar Cliente", "✏️ Editar Registro"])
+
+    # ---------------------------------------------------------
+    # PESTAÑA 1: AGREGAR NUEVO CLIENTE
+    # ---------------------------------------------------------
+    with tab_nuevo:
+        with st.form("form_nuevo_cliente"):
+            st.subheader("Datos del Nuevo Cliente")
+            c1, c2 = st.columns(2)
+            
+            f_nom = c1.text_input("👤 Nombre Completo")
+            f_tel = c2.text_input("📞 Teléfono")
+            
+            # --- NUEVO CAMPO DE CORREO ---
+            f_cor = c1.text_input("📧 Correo Electrónico")
+            f_dir = c2.text_input("📍 Dirección")
+            
+            f_not = st.text_area("📝 Notas adicionales")
+            
+            # Generación de ID automático
+            nuevo_id = 1
+            if not df_c.empty and "id_cliente" in df_c.columns:
+                try:
+                    nuevo_id = int(float(df_c["id_cliente"].max())) + 1
+                except:
+                    nuevo_id = len(df_c) + 1
+            
+            if st.form_submit_button("➕ REGISTRAR CLIENTE"):
+                if not f_nom:
+                    st.error("El nombre es obligatorio.")
+                else:
+                    nuevo_registro = pd.DataFrame([{
+                        "id_cliente": nuevo_id,
+                        "nombre": f_nom,
+                        "telefono": f_tel,
+                        "correo": f_cor,
+                        "direccion": f_dir,
+                        "notas": f_not
+                    }])
+                    
+                    df_c = pd.concat([df_c, nuevo_registro], ignore_index=True)
+                    conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_c)
+                    
+                    st.success(f"✅ Cliente {f_nom} registrado (ID: {nuevo_id})")
+                    st.cache_data.clear()
+                    st.rerun()
+
+    # ---------------------------------------------------------
+    # PESTAÑA 2: EDITAR O ELIMINAR CLIENTE
+    # ---------------------------------------------------------
+    with tab_editar:
+        if df_c.empty:
+            st.info("No hay clientes para editar.")
+        else:
+            # Selector usando ID y Nombre para precisión
+            cli_lista = (df_c["id_cliente"].astype(str) + " | " + df_c["nombre"]).tolist()
+            c_sel = st.selectbox("Seleccione el cliente a modificar:", ["--"] + cli_lista)
+            
+            if c_sel != "--":
+                id_c_sel = int(float(c_sel.split(" | ")[0]))
+                idx = df_c[df_c["id_cliente"].astype(float).astype(int) == id_c_sel].index[0]
+                row = df_c.loc[idx]
+                
+                with st.form("form_edit_cliente"):
+                    st.write(f"✏️ Editando: **{row['nombre']}**")
+                    ce1, ce2 = st.columns(2)
+                    
+                    e_nom = ce1.text_input("Nombre Completo", value=row["nombre"])
+                    e_tel = ce2.text_input("Teléfono", value=str(row.get("telefono", "")))
+                    
+                    e_cor = ce1.text_input("Correo Electrónico", value=str(row.get("correo", "")))
+                    e_dir = ce2.text_input("Dirección", value=str(row.get("direccion", "")))
+                    
+                    e_not = st.text_area("Notas", value=str(row.get("notas", "")))
+                    
+                    col_b1, col_b2 = st.columns(2)
+                    if col_b1.form_submit_button("💾 GUARDAR CAMBIOS"):
+                        df_c.at[idx, "nombre"] = e_nom
+                        df_c.at[idx, "telefono"] = e_tel
+                        df_c.at[idx, "correo"] = e_cor
+                        df_c.at[idx, "direccion"] = e_dir
+                        df_c.at[idx, "notas"] = e_not
+                        
+                        conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_c)
+                        st.success("Información actualizada."); st.cache_data.clear(); st.rerun()
+                        
+                    if col_b2.form_submit_button("🗑️ ELIMINAR CLIENTE"):
+                        df_c = df_c.drop(idx)
+                        conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_c)
+                        st.error("Cliente eliminado."); st.cache_data.clear(); st.rerun()
 
 
