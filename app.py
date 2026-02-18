@@ -28,12 +28,42 @@ def cargar_datos(pestana):
     except:
         return pd.DataFrame()
 
-# --- BARRA LATERAL (Navegación) ---
-st.sidebar.title("Navegación")
-menu = st.sidebar.radio(
-    "Seleccione un módulo:",
-    ["🏠 Inicio", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Gastos", "📍 Ubicaciones", "👥 Clientes"]
-)
+# ==========================================
+# 🛠️ BARRA LATERAL: NAVEGACIÓN Y ESTADO
+# ==========================================
+with st.sidebar:
+    st.title("🏢 Panel de Gestión")
+    
+    # --- MENÚ DE NAVEGACIÓN ---
+    menu = st.radio(
+        "Seleccione un módulo:",
+        ["🏠 Inicio", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Gastos", "📍 Ubicaciones", "👥 Clientes"]
+    )
+    
+    st.divider()
+
+    # --- BOTÓN DE ACTUALIZACIÓN ---
+    st.subheader("🔄 Base de Datos")
+    if st.button("Actualizar Información"):
+        st.cache_data.clear()
+        st.success("¡Datos actualizados!")
+        st.rerun()
+
+    # --- INDICADOR DE CONEXIÓN ---
+    # Esto verifica si la URL está configurada
+    if URL_SHEET != "TU_URL_AQUI":
+        st.sidebar.markdown("---")
+        st.sidebar.write("### 🌐 Estado del Sistema")
+        st.sidebar.success("✅ Conectado a la Nube")
+        
+        # Mostrar hora de última sincronización
+        ahora = datetime.now().strftime("%H:%M:%S")
+        st.sidebar.info(f"Última sincronización:\n{ahora}")
+    else:
+        st.sidebar.error("❌ Desconectado (Falta URL)")
+
+    st.divider()
+    st.info("Versión Personalizada 2026")
 
 # ==========================================
 # 🏠 MÓDULO: INICIO
@@ -332,5 +362,6 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
