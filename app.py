@@ -51,46 +51,39 @@ if st.sidebar.button("🔄 Actualizar Base de Datos"):
 # Esto actualiza el título dinámicamente según la opción elegida
 st.title(f"Sistema Inmobiliario - {menu[2:]}")
 
-# --- MÓDULO: INICIO (DASHBOARD ESTRATÉGICO CON UTILIDAD) ---
+# --- MÓDULO: INICIO (DASHBOARD CON SEMÁFORO DE 3 NIVELES) ---
 if menu == "🏠 Inicio":
-    # 1. CARGA DE TODAS LAS BASES DE DATOS
+    # 1. CARGA DE DATOS
     df_v = cargar_datos("ventas")
     df_u = cargar_datos("ubicaciones")
     df_p = cargar_datos("pagos")
     df_g = cargar_datos("gastos")
     
-    # 2. PROCESAMIENTO Y CÁLCULOS FINANCIEROS
+    # 2. PROCESAMIENTO FINANCIERO
     if "estatus_pago" not in df_v.columns: 
         df_v["estatus_pago"] = "Activo"
     
-    # Ingresos (Lo que se ha cobrado realmente)
+    # Ingresos y Gastos
     total_recaudado = df_p["monto"].sum() if not df_p.empty else 0
     total_enganches = df_v["enganche"].sum() if not df_v.empty else 0
     flujo_total_ingresos = total_recaudado + total_enganches
-    
-    # Egresos (Gastos operativos)
     total_gastos = df_g["monto"].sum() if not df_g.empty else 0
-    
-    # Utilidad Real (Dinero en caja neto)
     utilidad_neta = flujo_total_ingresos - total_gastos
     
-    # Cartera (Lo que falta por cobrar del total vendido)
+    # Cartera
     total_contratado = df_v["precio_total"].sum() if not df_v.empty else 0
     cartera_pendiente = total_contratado - flujo_total_ingresos
-    
-    contratos_activos = len(df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]) if not df_v.empty else 0
 
-    # --- FILA 1: MÉTRICAS FINANCIERAS (Dashboard de Utilidad) ---
+    # --- FILA 1: MÉTRICAS FINANCIERAS ---
     st.subheader("💰 Resumen Financiero Global")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Ingresos Reales", fmt_moneda(flujo_total_ingresos), help="Enganches + Abonos recibidos")
+    c1.metric("Ingresos Reales", fmt_moneda(flujo_total_ingresos))
     c2.metric("Gastos Operativos", fmt_moneda(total_gastos), delta=f"-{fmt_moneda(total_gastos)}", delta_color="inverse")
-    c3.metric("Utilidad Neta", fmt_moneda(utilidad_neta), help="Ingresos menos Gastos")
+    c3.metric("Utilidad Neta", fmt_moneda(utilidad_neta))
     c4.metric("Cartera por Cobrar", fmt_moneda(cartera_pendiente))
 
-    # --- FILA 2: INVENTARIO Y META MENSUAL ---
+    # --- FILA 2: INVENTARIO Y METAS ---
     col_inv, col_cob = st.columns(2)
-    
     with col_inv:
         st.subheader("📑 Inventario de Lotes")
         if not df_u.empty:
@@ -98,10 +91,8 @@ if menu == "🏠 Inicio":
             vendidos = len(df_u[df_u["estatus"] == "Vendido"])
             total_lotes = len(df_u)
             perc_venta = (vendidos / total_lotes) if total_lotes > 0 else 0
-            
             st.write(f"**Progreso de Ventas:** {int(perc_venta*100)}%")
             st.progress(perc_venta)
-            
             ci1, ci2 = st.columns(2)
             ci1.write(f"✅ **Disponibles:** {disponibles}")
             ci2.write(f"🤝 **Vendidos:** {vendidos}")
@@ -112,12 +103,10 @@ if menu == "🏠 Inicio":
             mensualidad_esperada = df_v[df_v["estatus_pago"] == "Activo"]["mensualidad"].sum()
             st.write("**Recaudación esperada este mes:**")
             st.info(f"### {fmt_moneda(mensualidad_esperada)}")
-        else:
-            st.info("Sin contratos activos.")
 
     st.divider()
 
-    # --- FILA 3: MONITOR DE CARTERA (SITUACIÓN DE CLIENTES) ---
+    # --- FILA 3: MONITOR DE CARTERA (SITUACIÓN DE CLIENTES CON SEMÁFORO) ---
     st.subheader("🚩 Monitor de Cartera y Cobranza")
     
     if not df_v.empty:
@@ -129,38 +118,38 @@ if menu == "🏠 Inicio":
             pagos_cliente = df_p[df_p['ubicacion'] == venta['ubicacion']]['monto'].sum() if not df_p.empty else 0.0
             saldo_liquidar = float(venta['precio_total']) - float(venta['enganche']) - pagos_cliente
             
-            # Cálculo de atraso
-            try:
-                fecha_con = datetime.strptime(str(venta['fecha']), '%Y-%m-%d')
-            except:
-                fecha_con = hoy
+            # Cálculo de tiempo y atraso
+            try: fecha_con = datetime.strptime(str(venta['fecha']), '%Y-%m-%d')
+            except: fecha_con = hoy
             
             meses_transcurridos = (hoy.year - fecha_con.year) * 12 + (hoy.month - fecha_con.month)
             debe_a_la_fecha = meses_transcurridos * float(venta['mensualidad'])
             pago_para_corriente = debe_a_la_fecha - pagos_cliente
             
+            # NUEVA LÓGICA DE SEMÁFORO (25 / 75 DÍAS)
             if pago_para_corriente > 1.0:
-                estatus_c = "🔴 Atrasado"
                 dia_pago = fecha_con.day
                 try:
-                    fecha_venc_mes = hoy.replace(day=dia_pago)
-                    if hoy < fecha_venc_mes:
-                        fecha_venc_mes = fecha_venc_mes - relativedelta(months=1)
-                except:
-                    fecha_venc_mes = hoy.replace(day=1) - relativedelta(days=1)
-                dias_atraso = (hoy - fecha_venc_mes).days
+                    f_venc_mes = hoy.replace(day=dia_pago)
+                    if hoy < f_venc_mes: f_venc_mes = f_venc_mes - relativedelta(months=1)
+                except: f_venc_mes = hoy.replace(day=1) - relativedelta(days=1)
+                
+                dias_atraso = (hoy - f_venc_mes).days
+                
+                if dias_atraso <= 25:
+                    estatus_c = "🟢 AL CORRIENTE"
+                elif 25 < dias_atraso <= 75:
+                    estatus_c = "🟡 ATRASO"
+                else:
+                    estatus_c = "🔴 ATRASO MAYOR"
             else:
-                estatus_c = "🟢 Corriente"
+                estatus_c = "🟢 AL CORRIENTE"
                 pago_para_corriente = 0.0
                 dias_atraso = 0
 
             monitor_data.append({
                 "Ubicación": venta['ubicacion'],
                 "Cliente": venta['cliente'],
-                "Fecha Contrato": venta['fecha'],
-                "Costo": float(venta['precio_total']),
-                "Enganche": float(venta['enganche']),
-                "Total Pagado": pagos_cliente,
                 "Estatus": estatus_c,
                 "Días Atraso": dias_atraso,
                 "Para Estar al Corriente": pago_para_corriente,
@@ -169,21 +158,24 @@ if menu == "🏠 Inicio":
 
         df_monitor = pd.DataFrame(monitor_data)
         
-        # Tabla interactiva
+        # Estilo para la tabla de monitor
+        def estilo_monitor(val):
+            if "🔴" in str(val): return 'color: #FF4B4B; font-weight: bold'
+            if "🟡" in str(val): return 'color: #F1C40F; font-weight: bold'
+            if "🟢" in str(val): return 'color: #09AB3B; font-weight: bold'
+            return ''
+
         st.dataframe(
-            df_monitor,
+            df_monitor.style.applymap(estilo_monitor, subset=['Estatus']),
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Costo": st.column_config.NumberColumn(format="$ %.2f"),
-                "Enganche": st.column_config.NumberColumn(format="$ %.2f"),
-                "Total Pagado": st.column_config.NumberColumn(format="$ %.2f"),
                 "Para Estar al Corriente": st.column_config.NumberColumn(format="$ %.2f"),
                 "Saldo Liquidar": st.column_config.NumberColumn(format="$ %.2f")
             }
         )
     else:
-        st.info("No hay datos para mostrar en el monitor.")
+        st.info("No hay datos para mostrar.")
 
 # --- MÓDULO: VENTAS ---
 elif menu == "📝 Ventas":
@@ -679,4 +671,5 @@ elif menu == "📇 Directorio":
         # Mostramos la tabla incluyendo el ID al principio
         columnas_vista = [col_id, "nombre", "telefono", "correo"]
         st.dataframe(df_dir[columnas_vista], use_container_width=True, hide_index=True)
+
 
