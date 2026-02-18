@@ -577,15 +577,101 @@ elif menu == "💸 Gastos":
             st.success("Gasto guardado"); st.cache_data.clear(); st.rerun()
 
 # ==========================================
-# 📍 MÓDULO: UBICACIONES
+# 📍 MÓDULO: UBICACIONES (Inventario)
 # ==========================================
 elif menu == "📍 Ubicaciones":
-    st.title("📍 Ubicaciones")
+    st.title("📍 Control de Inventario y Ubicaciones")
+    
+    # Cargar base de datos
     df_u = cargar_datos("ubicaciones")
-    edit = st.data_editor(df_u, use_container_width=True, hide_index=True)
-    if st.button("Guardar Cambios"):
-        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=edit)
-        st.success("Actualizado"); st.cache_data.clear(); st.rerun()
+
+    # --- FILTRO TIPO SWITCH ---
+    # Usamos un checkbox con estilo de switch para filtrar la tabla
+    col_f1, col_f2 = st.columns([1, 3])
+    ver_vendidos = col_f1.toggle("Ver ubicaciones vendidas", value=True)
+
+    df_mostrar = df_u.copy()
+    if not ver_vendidos:
+        df_mostrar = df_u[df_u["estatus"] == "Disponible"]
+
+    st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
+
+    # Tabs para organizar las acciones
+    tab_nueva, tab_editar = st.tabs(["✨ Agregar Ubicación", "✏️ Editar Registro"])
+
+    # ---------------------------------------------------------
+    # PESTAÑA 1: AGREGAR NUEVA UBICACIÓN
+    # ---------------------------------------------------------
+    with tab_nueva:
+        with st.form("form_nueva_ubi"):
+            st.subheader("Registrar Nuevo Lote/Ubicación")
+            c1, c2 = st.columns(2)
+            
+            n_ubi = c1.text_input("Nombre de la Ubicación (Ej: Lote 01, Manzana A)")
+            n_est = c2.selectbox("Estatus Inicial", ["Disponible", "Vendido", "Apartado", "Bloqueado"])
+            
+            # Recordando que siempre usamos formato $
+            n_pre = c1.number_input("Precio de Lista ($)", min_value=0.0, value=0.0, step=1000.0)
+            n_det = c2.text_input("Detalles / Medidas (Ej: 10x20m)")
+            
+            if st.form_submit_button("➕ AGREGAR AL INVENTARIO"):
+                if not n_ubi:
+                    st.error("Debe ingresar un nombre para la ubicación.")
+                else:
+                    # Crear nuevo registro
+                    nueva_fila = pd.DataFrame([{
+                        "ubicacion": n_ubi,
+                        "estatus": n_est,
+                        "precio": n_pre,
+                        "detalles": n_det
+                    }])
+                    
+                    df_u = pd.concat([df_u, nueva_fila], ignore_index=True)
+                    conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+                    
+                    st.success(f"✅ {n_ubi} agregado correctamente.")
+                    st.cache_data.clear()
+                    st.rerun()
+
+    # ---------------------------------------------------------
+    # PESTAÑA 2: EDITAR O ELIMINAR REGISTROS
+    # ---------------------------------------------------------
+    with tab_editar:
+        if df_u.empty:
+            st.info("No hay ubicaciones para editar.")
+        else:
+            ubi_lista = df_u["ubicacion"].tolist()
+            u_sel = st.selectbox("Seleccione la ubicación a modificar:", ["--"] + ubi_lista)
+            
+            if u_sel != "--":
+                idx = df_u[df_u["ubicacion"] == u_sel].index[0]
+                row = df_u.loc[idx]
+                
+                with st.form("form_edit_ubi"):
+                    st.write(f"✏️ Editando: **{u_sel}**")
+                    ce1, ce2 = st.columns(2)
+                    
+                    e_ubi = ce1.text_input("Nombre de Ubicación", value=row["ubicacion"])
+                    e_est = ce2.selectbox("Estatus", ["Disponible", "Vendido", "Apartado", "Bloqueado"], 
+                                         index=["Disponible", "Vendido", "Apartado", "Bloqueado"].index(row["estatus"]))
+                    
+                    e_pre = ce1.number_input("Precio Actualizado ($)", min_value=0.0, value=float(row["precio"]))
+                    e_det = ce2.text_input("Detalles / Medidas", value=str(row.get("detalles", "")))
+                    
+                    col_b1, col_b2 = st.columns(2)
+                    if col_b1.form_submit_button("💾 GUARDAR CAMBIOS"):
+                        df_u.at[idx, "ubicacion"] = e_ubi
+                        df_u.at[idx, "estatus"] = e_est
+                        df_u.at[idx, "precio"] = e_pre
+                        df_u.at[idx, "detalles"] = e_det
+                        
+                        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+                        st.success("Cambios aplicados."); st.cache_data.clear(); st.rerun()
+                        
+                    if col_b2.form_submit_button("🗑️ ELIMINAR DE INVENTARIO"):
+                        df_u = df_u.drop(idx)
+                        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+                        st.error("Ubicación eliminada."); st.cache_data.clear(); st.rerun()
 
 # ==========================================
 # 👥 MÓDULO: CLIENTES
@@ -602,6 +688,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
