@@ -423,108 +423,108 @@ elif menu == "📊 Detalle de Crédito":
         )
 
 # ==========================================
-# 💰 MÓDULO: COBRANZA (Con Folio de Comprobante)
+# 💰 MÓDULO: COBRANZA (Con Editor de Historial)
 # ==========================================
 elif menu == "💰 Cobranza":
-    st.title("💰 Registro de Cobranza")
+    st.title("💰 Gestión de Cobranza")
     
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
 
-    tab_pago, tab_historial = st.tabs(["💵 Registrar Pago", "📋 Historial de Cobros"])
+    tab_pago, tab_historial = st.tabs(["💵 Registrar Nuevo Pago", "📋 Historial y Edición"])
 
+    # ---------------------------------------------------------
+    # PESTAÑA 1: REGISTRAR PAGO (Lo que ya teníamos)
+    # ---------------------------------------------------------
     with tab_pago:
         if df_v.empty:
             st.warning("No hay ventas registradas.")
         else:
             opciones_vta = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist()
-            seleccion = st.selectbox("🔍 Seleccione el Contrato:", ["--"] + opciones_vta)
+            seleccion = st.selectbox("🔍 Seleccione Contrato:", ["--"] + opciones_vta, key="sel_cobro")
             
             if seleccion != "--":
                 ubi_sel = seleccion.split(" | ")[0]
                 v = df_v[df_v["ubicacion"] == ubi_sel].iloc[0]
                 
-                # --- LÓGICA DE MONTO SUGERIDO ---
-                pagos_previos = df_p[df_p["ubicacion"] == ubi_sel]["monto"].sum() if not df_p.empty and "monto" in df_p.columns else 0
+                # Cálculos de deuda sugerida
+                p_previos = df_p[df_p["ubicacion"] == ubi_sel]["monto"].sum() if not df_p.empty else 0
+                f_con = pd.to_datetime(v['fecha'])
+                meses_t = (datetime.now().year - f_con.year) * 12 + (datetime.now().month - f_con.month)
+                deuda_esp = max(0, min(meses_t, int(v['plazo_meses']))) * float(v['mensualidad'])
+                s_vencido = max(0, deuda_esp - p_previos)
                 
-                fecha_contrato = pd.to_datetime(v['fecha'])
-                hoy = datetime.now()
-                meses_transcurridos = (hoy.year - fecha_contrato.year) * 12 + (hoy.month - fecha_contrato.month)
-                meses_a_deber = max(0, min(meses_transcurridos, int(v['plazo_meses'])))
+                monto_sug = s_vencido if s_vencido > 0 else float(v['mensualidad'])
                 
-                deuda_esperada = meses_a_deber * float(v['mensualidad'])
-                saldo_vencido = max(0, deuda_esperada - pagos_previos)
-                
-                monto_sugerido = saldo_vencido if saldo_vencido > 0 else float(v['mensualidad'])
-                
-                if saldo_vencido > 0:
-                    st.error(f"⚠️ Atraso detectado: {fmt_moneda(saldo_vencido)}")
+                if s_vencido > 0:
+                    st.error(f"⚠️ Atraso: {fmt_moneda(s_vencido)}")
                 else:
-                    st.success(f"✅ Al corriente. Importe sugerido: {fmt_moneda(monto_sugerido)}")
+                    st.success(f"✅ Al corriente. Sugerido: {fmt_moneda(monto_sug)}")
 
-                # --- FORMULARIO DE COBRO ---
-                with st.form("form_cobranza_v3"):
-                    st.write(f"### Registro de Cobro: {v['ubicacion']}")
-                    st.info(f"👤 **Cliente:** {v['cliente']}")
-                    
+                with st.form("form_nuevo_pago"):
                     c1, c2, c3 = st.columns(3)
-                    f_fec = c1.date_input("📅 Fecha de Pago", value=datetime.now())
-                    f_metodo = c2.selectbox("💳 Método", ["Efectivo", "Transferencia", "Depósito", "Cheque"])
-                    # --- NUEVO CAMPO DE FOLIO ---
-                    f_folio = c3.text_input("🧾 Folio de Comprobante", placeholder="Ej. A-1234")
+                    f_fec = c1.date_input("Fecha", value=datetime.now())
+                    f_met = c2.selectbox("Método", ["Efectivo", "Transferencia", "Depósito"])
+                    f_fol = c3.text_input("Folio Comprobante")
                     
-                    st.markdown("---")
+                    col_m, col_r = st.columns([2, 1])
+                    f_mon = col_m.number_input("Importe ($)", min_value=0.0, value=monto_sug)
+                    if col_r.form_submit_button("🔄 Actualizar"): st.rerun()
                     
-                    # Fila para el dinero y el botón de refresco
-                    col_dinero, col_refresco = st.columns([2, 1])
-                    f_monto = col_dinero.number_input("💵 Importe a Recibir ($)", min_value=0.0, value=monto_sugerido)
-                    
-                    if col_refresco.form_submit_button("🔄 Actualizar Sugerencia"):
-                        st.rerun()
-                    
-                    f_coment = st.text_area("📝 Notas adicionales")
-
-                    if st.form_submit_button("✅ REGISTRAR COBRO Y GUARDAR", type="primary"):
-                        if f_monto <= 0:
-                            st.error("❌ El monto debe ser mayor a $ 0")
-                        elif not f_folio:
-                            st.warning("⚠️ Se recomienda ingresar un número de folio para control.")
-                            # Aun así permitimos guardar, o puedes poner st.error si quieres que sea obligatorio
-                        
-                        # Generar ID de pago seguro
-                        if not df_p.empty and "id_pago" in df_p.columns:
-                            nuevo_id = int(df_p["id_pago"].max() + 1)
-                        else:
-                            nuevo_id = 1
-                        
-                        nuevo_pago = {
-                            "id_pago": nuevo_id,
-                            "fecha": f_fec.strftime('%Y-%m-%d'),
-                            "ubicacion": ubi_sel,
-                            "cliente": v['cliente'],
-                            "monto": f_monto,
-                            "metodo": f_metodo,
-                            "folio": f_folio, # <--- GUARDAMOS EL FOLIO
-                            "comentarios": f_coment
-                        }
-                        
-                        df_p = pd.concat([df_p, pd.DataFrame([nuevo_pago])], ignore_index=True)
+                    f_com = st.text_area("Notas")
+                    if st.form_submit_button("✅ REGISTRAR PAGO", type="primary"):
+                        nid = int(df_p["id_pago"].max() + 1) if not df_p.empty else 1
+                        nuevo = pd.DataFrame([{"id_pago": nid, "fecha": f_fec.strftime('%Y-%m-%d'), "ubicacion": ubi_sel, "cliente": v['cliente'], "monto": f_mon, "metodo": f_met, "folio": f_fol, "comentarios": f_com}])
+                        df_p = pd.concat([df_p, nuevo], ignore_index=True)
                         conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
-                        
-                        st.success(f"✅ Pago de {fmt_moneda(f_monto)} registrado con Folio: {f_folio}")
-                        st.cache_data.clear()
-                        st.rerun()
+                        st.success("Pago registrado"); st.cache_data.clear(); st.rerun()
 
+    # ---------------------------------------------------------
+    # PESTAÑA 2: HISTORIAL Y EDICIÓN (La nueva funcionalidad)
+    # ---------------------------------------------------------
     with tab_historial:
-        st.subheader("Historial de Recaudación")
-        if not df_p.empty:
-            # Reordenar columnas para que el Folio se vea primero
-            columnas_orden = ["fecha", "folio", "ubicacion", "cliente", "monto", "metodo"]
-            # Solo mostramos las columnas que existen
-            cols_existentes = [c for c in columnas_orden if c in df_p.columns]
-            st.dataframe(df_p[cols_existentes], use_container_width=True, hide_index=True)
+        st.subheader("Historial de Pagos")
+        if df_p.empty:
+            st.info("No hay pagos registrados.")
         else:
-            st.info("No hay pagos registrados todavía.")
+            # Selector para editar un pago específico
+            lista_pagos = (df_p["id_pago"].astype(str) + " | " + df_p["fecha"] + " | " + df_p["ubicacion"] + " | " + fmt_moneda(df_p["monto"])).tolist()
+            pago_a_editar = st.selectbox("✏️ Seleccione un pago para modificar o eliminar:", ["--"] + lista_pagos[::-1]) # Invertido para ver los más recientes arriba
+            
+            if pago_a_editar != "--":
+                id_p_sel = int(pago_a_editar.split(" | ")[0])
+                idx_pago = df_p[df_p["id_pago"] == id_p_sel].index[0]
+                datos_p = df_p.loc[idx_pago]
+
+                with st.expander("🛠️ Formulario de Edición", expanded=True):
+                    with st.form("edit_pago_form"):
+                        st.warning(f"Editando Pago ID: {id_p_sel} ({datos_p['ubicacion']})")
+                        ec1, ec2, ec3 = st.columns(3)
+                        e_fec = ec1.date_input("Fecha", value=pd.to_datetime(datos_p["fecha"]))
+                        e_met = ec2.selectbox("Método", ["Efectivo", "Transferencia", "Depósito"], index=["Efectivo", "Transferencia", "Depósito"].index(datos_p["metodo"]) if datos_p["metodo"] in ["Efectivo", "Transferencia", "Depósito"] else 0)
+                        e_fol = ec3.text_input("Folio", value=str(datos_p.get("folio", "")))
+                        
+                        e_mon = st.number_input("Importe ($)", min_value=0.0, value=float(datos_p["monto"]))
+                        e_com = st.text_area("Comentarios", value=str(datos_p.get("comentarios", "")))
+                        
+                        col_btn1, col_btn2 = st.columns(2)
+                        if col_btn1.form_submit_button("💾 GUARDAR CAMBIOS"):
+                            df_p.at[idx_pago, "fecha"] = e_fec.strftime('%Y-%m-%d')
+                            df_p.at[idx_pago, "metodo"] = e_met
+                            df_p.at[idx_pago, "folio"] = e_fol
+                            df_p.at[idx_pago, "monto"] = e_mon
+                            df_p.at[idx_pago, "comentarios"] = e_com
+                            conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
+                            st.success("¡Pago actualizado!"); st.cache_data.clear(); st.rerun()
+                            
+                        if col_btn2.form_submit_button("🗑️ ELIMINAR PAGO"):
+                            df_p = df_p.drop(idx_pago)
+                            conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
+                            st.error("Pago eliminado."); st.cache_data.clear(); st.rerun()
+
+            st.markdown("---")
+            st.write("**Vista General de Pagos:**")
+            st.dataframe(df_p, use_container_width=True, hide_index=True)
 
 # ==========================================
 # 💸 MÓDULO: GASTOS
@@ -567,6 +567,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
