@@ -31,7 +31,7 @@ def cargar_datos(pestana):
 st.sidebar.title("Navegación")
 menu = st.sidebar.radio(
     "Seleccione una sección:",
-    ["🏠 Inicio", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Comisiones", "📑 Catálogo", "📇 Directorio"]
+    ["🏠 Inicio", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Gastos", "💸 Comisiones", "📑 Catálogo", "📇 Directorio"]
 )
 
 st.sidebar.markdown("---")
@@ -448,6 +448,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
