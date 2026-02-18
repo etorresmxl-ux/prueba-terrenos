@@ -4,6 +4,223 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from streamlit_gsheets import GSheetsConnection
 
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Sistema Inmobiliario Pro", layout="wide")
+
+# --- CONEXIÓN Y CARGA DE DATOS ---
+URL_SHEET = "TU_URL_DE_GOOGLE_SHEETS_AQUÍ" # Reemplaza con tu URL real
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+def cargar_datos(worksheet_name):
+    try:
+        return conn.read(spreadsheet=URL_SHEET, worksheet=worksheet_name)
+    except:
+        return pd.DataFrame()
+
+def fmt_moneda(valor):
+    return f"$ {valor:,.2f}"
+
+# --- MENÚ LATERAL ---
+with st.sidebar:
+    st.title("🏢 Panel de Gestión")
+    menu = st.radio("Menú Principal", [
+        "🏠 Inicio", 
+        "📝 Ventas", 
+        "📊 Detalle de Crédito", 
+        "💰 Cobranza", 
+        "💸 Gastos", 
+        "📍 Ubicaciones", 
+        "👥 Clientes"
+    ])
+    st.info("Versión 2.0 | 2026")
+
+# ==========================================
+# 🏠 MÓDULO: INICIO
+# ==========================================
+if menu == "🏠 Inicio":
+    df_v = cargar_datos("ventas")
+    df_p = cargar_datos("pagos")
+    df_g = cargar_datos("gastos")
+    
+    # Métricas Globales
+    total_recaudado = df_p["monto"].sum() if not df_p.empty else 0
+    total_enganches = df_v["enganche"].sum() if not df_v.empty else 0
+    ingresos_totales = total_recaudado + total_enganches
+    gastos_totales = df_g["monto"].sum() if not df_g.empty else 0
+    
+    st.subheader("💰 Resumen Financiero Global")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Ingresos Reales", fmt_moneda(ingresos_totales))
+    c2.metric("Gastos Totales", fmt_moneda(gastos_totales), delta=f"-{fmt_moneda(gastos_totales)}", delta_color="inverse")
+    c3.metric("Utilidad Neta", fmt_moneda(ingresos_totales - gastos_totales))
+
+    st.divider()
+
+    # Monitor de Cartera
+    col_h, col_s = st.columns([2, 1])
+    col_h.subheader("🚩 Monitor de Cartera")
+    solo_atrasos = col_s.toggle("Ocultar clientes Al Corriente", value=True)
+    
+    if not df_v.empty:
+        monitor_data = []
+        hoy = datetime.now()
+
+        for _, v in df_v.iterrows():
+            pagos_c = df_p[df_p['ubicacion'] == v['ubicacion']]['monto'].sum() if not df_p.empty else 0.0
+            try: f_con = datetime.strptime(str(v['fecha']), '%Y-%m-%d')
+            except: f_con = hoy
+            
+            diff = relativedelta(hoy, f_con)
+            meses_trans = diff.years * 12 + diff.months
+            monto_exigible = meses_trans * float(v['mensualidad'])
+            deuda_vencida = monto_exigible - pagos_c
+            
+            if deuda_vencida > 1.0:
+                f_venc = f_con + relativedelta(months=meses_trans)
+                dias_m = (hoy - f_venc).days
+                est = "🔴 ATRASO"
+            else:
+                est = "🟢 AL CORRIENTE"
+                deuda_vencida, dias_m = 0.0, 0
+
+            monitor_data.append({
+                "Ubicación": v['ubicacion'], "Cliente": v['cliente'],
+                "Estatus": est, "Días Mora": dias_m,
+                "Deuda Vencida": deuda_vencida, "Saldo Restante": float(v['precio_total']) - float(v['enganche']) - pagos_c
+            })
+
+        df_mon = pd.DataFrame(monitor_data)
+        if solo_atrasos: df_mon = df_mon[df_mon["Estatus"] == "🔴 ATRASO"]
+
+        if df_mon.empty: st.success("🎉 Todo al corriente")
+        else:
+            st.dataframe(df_mon.style.applymap(lambda x: 'color: #FF4B4B; font-weight: bold' if "🔴" in str(x) else 'color: #09AB3B', subset=['Estatus']),
+                         use_container_width=True, hide_index=True,
+                         column_config={"Deuda Vencida": st.column_config.NumberColumn(format="$ %.2f"), "Saldo Restante": st.column_config.NumberColumn(format="$ %.2f")})
+
+# ==========================================
+# 📝 MÓDULO: VENTAS
+# ==========================================
+elif menu == "📝 Ventas":
+    st.header("Nueva Venta")
+    df_v = cargar_datos("ventas")
+    df_u = cargar_datos("ubicaciones")
+    df_cl = cargar_datos("clientes")
+
+    lotes_disp = df_u[df_u["estatus"] == "Disponible"]["ubicacion"].tolist()
+    f_lote = st.selectbox("Seleccione Ubicación", ["--"] + lotes_disp)
+    
+    precio_sug = 0.0
+    if f_lote != "--":
+        precio_sug = float(df_u[df_u["ubicacion"] == f_lote].iloc[0]["precio"])
+        st.info(f"Precio de lista: {fmt_moneda(precio_sug)}")
+
+    with st.form("f_v"):
+        c1, c2 = st.columns(2)
+        cli = c1.selectbox("Cliente", df_cl["nombre"] if not df_cl.empty else ["No hay clientes"])
+        fec = c2.date_input("Fecha Contrato")
+        tot = c1.number_input("Precio Final ($)", value=precio_sug)
+        eng = c2.number_input("Enganche ($)")
+        pla = st.number_input("Plazo (Meses)", min_value=1, value=12)
+        
+        if st.form_submit_button("Registrar Contrato"):
+            nid = int(pd.to_numeric(df_v["id_venta"], errors='coerce').max() + 1) if not df_v.empty else 1
+            nv = pd.DataFrame([{"id_venta": nid, "fecha": fec.strftime('%Y-%m-%d'), "ubicacion": f_lote, "cliente": cli, "precio_total": tot, "enganche": eng, "plazo_meses": pla, "mensualidad": (tot-eng)/pla, "estatus_pago": "Activo"}])
+            conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v, nv]))
+            df_u.loc[df_u["ubicacion"] == f_lote, "estatus"] = "Vendido"
+            conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+            st.cache_data.clear(); st.rerun()
+
+# ==========================================
+# 📊 MÓDULO: DETALLE DE CRÉDITO
+# ==========================================
+elif menu == "📊 Detalle de Crédito":
+    st.header("Detalle de Crédito")
+    df_v = cargar_datos("ventas")
+    df_p = cargar_datos("pagos")
+    
+    if not df_v.empty:
+        sel = st.selectbox("Contrato", df_v["ubicacion"] + " | " + df_v["cliente"])
+        d = df_v[df_v["ubicacion"] == sel.split(" | ")[0]].iloc[0]
+        pagado = df_p[df_p["ubicacion"] == d["ubicacion"]]["monto"].sum() if not df_p.empty else 0
+        
+        hoy = datetime.now()
+        f_c = datetime.strptime(str(d["fecha"]), '%Y-%m-%d')
+        m_r = (relativedelta(hoy, f_c).years * 12) + relativedelta(hoy, f_c).months
+        m_atraso = (m_r * float(d["mensualidad"])) - pagado
+        
+        est_t, col_t = ("🔴 ATRASO", "#FF4B4B") if m_atraso > 1 else ("🟢 AL CORRIENTE", "#09AB3B")
+
+        st.markdown(f"<h2 style='color:{col_t}'>{est_t}</h2>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Saldo Restante", fmt_moneda(float(d["precio_total"]) - float(d["enganche"]) - pagado))
+        c2.metric("Monto en Atraso", fmt_moneda(max(0, m_atraso)))
+        c3.metric("Total Pagado", fmt_moneda(pagado))
+
+# ==========================================
+# 💰 MÓDULO: COBRANZA
+# ==========================================
+elif menu == "💰 Cobranza":
+    st.header("Registro de Pagos")
+    df_v = cargar_datos("ventas")
+    df_p = cargar_datos("pagos")
+    
+    sel_c = st.selectbox("Lote", ["--"] + df_v["ubicacion"].tolist())
+    if sel_c != "--":
+        with st.form("pago"):
+            mon = st.number_input("Monto ($)", min_value=0.0)
+            fec = st.date_input("Fecha")
+            if st.form_submit_button("Aplicar Pago"):
+                np = pd.DataFrame([{"id_pago": len(df_p)+1, "fecha": fec.strftime('%Y-%m-%d'), "ubicacion": sel_c, "monto": mon}])
+                conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=pd.concat([df_p, np]))
+                st.cache_data.clear(); st.rerun()
+
+# ==========================================
+# 💸 GASTOS
+# ==========================================
+elif menu == "💸 Gastos":
+    st.header("Gastos Operativos")
+    df_g = cargar_datos("gastos")
+    with st.form("gastos"):
+        con = st.text_input("Concepto")
+        mon = st.number_input("Monto ($)", min_value=0.0)
+        if st.form_submit_button("Guardar Gasto"):
+            ng = pd.DataFrame([{"id_gasto": len(df_g)+1, "fecha": datetime.now().strftime('%Y-%m-%d'), "concepto": con, "monto": mon}])
+            conn.update(spreadsheet=URL_SHEET, worksheet="gastos", data=pd.concat([df_g, ng]))
+            st.cache_data.clear(); st.rerun()
+
+# ==========================================
+# 📍 UBICACIONES
+# ==========================================
+elif menu == "📍 Ubicaciones":
+    st.header("Inventario de Ubicaciones")
+    df_u = cargar_datos("ubicaciones")
+    st.data_editor(df_u, use_container_width=True, hide_index=True)
+    if st.button("Guardar Cambios"):
+        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+        st.success("Catálogo actualizado"); st.cache_data.clear()
+
+# ==========================================
+# 👥 CLIENTES
+# ==========================================
+elif menu == "👥 Clientes":
+    st.header("Directorio de Clientes")
+    df_cl = cargar_datos("clientes")
+    if not df_cl.empty:
+        st.dataframe(df_cl, use_container_width=True, hide_index=True)
+    with st.expander("Nuevo Cliente"):
+        with st.form("cli"):
+            nom = st.text_input("Nombre")
+            tel = st.text_input("Teléfono")
+            if st.form_submit_button("Registrar"):
+                nc = pd.DataFrame([{"id_cliente": len(df_cl)+1, "nombre": nom, "telefono": tel}])
+                conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nc]))
+                st.cache_data.clear(); st.rerun()import streamlit as st
+import pandas as pd
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+from streamlit_gsheets import GSheetsConnection
+
 # --- 1. CONFIGURACIÓN Y CONEXIÓN (LOS CIMIENTOS) ---
 st.set_page_config(page_title="Sistema Inmobiliario", layout="wide")
 
@@ -597,5 +814,6 @@ elif menu == "📇 Directorio":
             st.table(df_vd[["id_vendedor", "nombre", "telefono", "comision_base", "estatus"]])
         else:
             st.info("No hay vendedores registrados en el equipo.")
+
 
 
