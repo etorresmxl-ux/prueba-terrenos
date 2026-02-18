@@ -51,7 +51,7 @@ if st.sidebar.button("🔄 Actualizar Base de Datos"):
 # Esto actualiza el título dinámicamente según la opción elegida
 st.title(f"Sistema Inmobiliario - {menu[2:]}")
 
-# --- MÓDULO: INICIO (DASHBOARD CON SEMÁFORO DE 3 NIVELES) ---
+# --- MÓDULO: INICIO (DASHBOARD CON SEMÁFORO Y FILTRO DE ATRASOS) ---
 if menu == "🏠 Inicio":
     # 1. CARGA DE DATOS
     df_v = cargar_datos("ventas")
@@ -59,18 +59,17 @@ if menu == "🏠 Inicio":
     df_p = cargar_datos("pagos")
     df_g = cargar_datos("gastos")
     
-    # 2. PROCESAMIENTO FINANCIERO
+    # Asegurar columna de estatus
     if "estatus_pago" not in df_v.columns: 
         df_v["estatus_pago"] = "Activo"
     
-    # Ingresos y Gastos
+    # 2. PROCESAMIENTO FINANCIERO GLOBAL
     total_recaudado = df_p["monto"].sum() if not df_p.empty else 0
     total_enganches = df_v["enganche"].sum() if not df_v.empty else 0
     flujo_total_ingresos = total_recaudado + total_enganches
     total_gastos = df_g["monto"].sum() if not df_g.empty else 0
     utilidad_neta = flujo_total_ingresos - total_gastos
     
-    # Cartera
     total_contratado = df_v["precio_total"].sum() if not df_v.empty else 0
     cartera_pendiente = total_contratado - flujo_total_ingresos
 
@@ -82,59 +81,44 @@ if menu == "🏠 Inicio":
     c3.metric("Utilidad Neta", fmt_moneda(utilidad_neta))
     c4.metric("Cartera por Cobrar", fmt_moneda(cartera_pendiente))
 
-    # --- FILA 2: INVENTARIO Y METAS ---
-    col_inv, col_cob = st.columns(2)
-    with col_inv:
-        st.subheader("📑 Inventario de Lotes")
-        if not df_u.empty:
-            disponibles = len(df_u[df_u["estatus"] == "Disponible"])
-            vendidos = len(df_u[df_u["estatus"] == "Vendido"])
-            total_lotes = len(df_u)
-            perc_venta = (vendidos / total_lotes) if total_lotes > 0 else 0
-            st.write(f"**Progreso de Ventas:** {int(perc_venta*100)}%")
-            st.progress(perc_venta)
-            ci1, ci2 = st.columns(2)
-            ci1.write(f"✅ **Disponibles:** {disponibles}")
-            ci2.write(f"🤝 **Vendidos:** {vendidos}")
-
-    with col_cob:
-        st.subheader("📅 Meta de Cobranza Mensual")
-        if not df_v.empty:
-            mensualidad_esperada = df_v[df_v["estatus_pago"] == "Activo"]["mensualidad"].sum()
-            st.write("**Recaudación esperada este mes:**")
-            st.info(f"### {fmt_moneda(mensualidad_esperada)}")
-
     st.divider()
 
-    # --- FILA 3: MONITOR DE CARTERA (SITUACIÓN DE CLIENTES CON SEMÁFORO) ---
-    st.subheader("🚩 Monitor de Cartera y Cobranza")
+    # --- FILA 2: MONITOR DE CARTERA ---
+    col_header, col_switch = st.columns([2, 1])
+    with col_header:
+        st.subheader("🚩 Monitor de Cartera y Cobranza")
+    with col_switch:
+        # Switch para ocultar los que están al corriente (Encendido por defecto)
+        solo_atrasos = st.toggle("Ocultar clientes Al Corriente", value=True)
     
     if not df_v.empty:
         monitor_data = []
         hoy = datetime.now()
 
         for _, venta in df_v.iterrows():
-            # Pagos del cliente
+            # 1. Obtener pagos del cliente
             pagos_cliente = df_p[df_p['ubicacion'] == venta['ubicacion']]['monto'].sum() if not df_p.empty else 0.0
             saldo_liquidar = float(venta['precio_total']) - float(venta['enganche']) - pagos_cliente
             
-            # Cálculo de tiempo y atraso
-            try: fecha_con = datetime.strptime(str(venta['fecha']), '%Y-%m-%d')
-            except: fecha_con = hoy
+            # 2. Lógica de tiempo basada en Fecha de Compra (Inicio de Contrato)
+            try: 
+                fecha_con = datetime.strptime(str(venta['fecha']), '%Y-%m-%d')
+            except: 
+                fecha_con = hoy
             
-            meses_transcurridos = (hoy.year - fecha_con.year) * 12 + (hoy.month - fecha_con.month)
+            # Diferencia exacta usando relativedelta
+            diff = relativedelta(hoy, fecha_con)
+            meses_transcurridos = diff.years * 12 + diff.months
+            
+            # Monto exigible a la fecha
             debe_a_la_fecha = meses_transcurridos * float(venta['mensualidad'])
             pago_para_corriente = debe_a_la_fecha - pagos_cliente
             
-            # NUEVA LÓGICA DE SEMÁFORO (25 / 75 DÍAS)
+            # 3. Determinar Días de Atraso y Estatus (25/75 días)
             if pago_para_corriente > 1.0:
-                dia_pago = fecha_con.day
-                try:
-                    f_venc_mes = hoy.replace(day=dia_pago)
-                    if hoy < f_venc_mes: f_venc_mes = f_venc_mes - relativedelta(months=1)
-                except: f_venc_mes = hoy.replace(day=1) - relativedelta(days=1)
-                
-                dias_atraso = (hoy - f_venc_mes).days
+                # El vencimiento es el mismo día del mes que la compra
+                proximo_venc = fecha_con + relativedelta(months=meses_transcurridos)
+                dias_atraso = (hoy - proximo_venc).days
                 
                 if dias_atraso <= 25:
                     estatus_c = "🟢 AL CORRIENTE"
@@ -147,6 +131,7 @@ if menu == "🏠 Inicio":
                 pago_para_corriente = 0.0
                 dias_atraso = 0
 
+            # Estructura de datos para la tabla
             monitor_data.append({
                 "Ubicación": venta['ubicacion'],
                 "Cliente": venta['cliente'],
@@ -158,24 +143,54 @@ if menu == "🏠 Inicio":
 
         df_monitor = pd.DataFrame(monitor_data)
         
-        # Estilo para la tabla de monitor
-        def estilo_monitor(val):
-            if "🔴" in str(val): return 'color: #FF4B4B; font-weight: bold'
-            if "🟡" in str(val): return 'color: #F1C40F; font-weight: bold'
-            if "🟢" in str(val): return 'color: #09AB3B; font-weight: bold'
-            return ''
+        # APLICAR FILTRO DEL SWITCH
+        if solo_atrasos:
+            df_monitor = df_monitor[df_monitor["Estatus"] != "🟢 AL CORRIENTE"]
 
-        st.dataframe(
-            df_monitor.style.applymap(estilo_monitor, subset=['Estatus']),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Para Estar al Corriente": st.column_config.NumberColumn(format="$ %.2f"),
-                "Saldo Liquidar": st.column_config.NumberColumn(format="$ %.2f")
-            }
-        )
+        if df_monitor.empty:
+            st.success("🎉 ¡Todos los clientes están al corriente!")
+        else:
+            # Estilo de colores para la tabla
+            def estilo_monitor(val):
+                if "🔴" in str(val): return 'color: #FF4B4B; font-weight: bold'
+                if "🟡" in str(val): return 'color: #F1C40F; font-weight: bold'
+                if "🟢" in str(val): return 'color: #09AB3B; font-weight: bold'
+                return ''
+
+            st.dataframe(
+                df_monitor.style.applymap(estilo_monitor, subset=['Estatus']),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Para Estar al Corriente": st.column_config.NumberColumn(format="$ %.2f"),
+                    "Saldo Liquidar": st.column_config.NumberColumn(format="$ %.2f"),
+                    "Días Atraso": st.column_config.NumberColumn(format="%d d")
+                }
+            )
     else:
-        st.info("No hay datos para mostrar.")
+        st.info("No hay contratos registrados para monitorear.")
+
+    st.divider()
+
+    # --- FILA 3: ESTADÍSTICAS RÁPIDAS ---
+    st.subheader("📊 Resumen de Operaciones")
+    col_inv, col_meta = st.columns(2)
+    
+    with col_inv:
+        if not df_u.empty:
+            disponibles = len(df_u[df_u["estatus"] == "Disponible"])
+            vendidos = len(df_u[df_u["estatus"] == "Vendido"])
+            total_lotes = len(df_u)
+            perc = (vendidos / total_lotes) if total_lotes > 0 else 0
+            st.write(f"**Ocupación del Desarrollo:** {int(perc*100)}%")
+            st.progress(perc)
+            st.write(f"Lotes Disponibles: {disponibles} | Lotes Vendidos: {vendidos}")
+
+    with col_meta:
+        if not df_v.empty:
+            mensualidad_esperada = df_v[df_v["estatus_pago"] == "Activo"]["mensualidad"].sum()
+            st.write("**Recaudación mensual estimada:**")
+            st.info(f"### {fmt_moneda(mensualidad_esperada)}")
 
 # --- MÓDULO: VENTAS (COMPATIBLE CON NUEVOS ESTATUS) ---
 elif menu == "📝 Ventas":
@@ -685,6 +700,7 @@ elif menu == "📇 Directorio":
         # Mostramos la tabla incluyendo el ID al principio
         columnas_vista = [col_id, "nombre", "telefono", "correo"]
         st.dataframe(df_dir[columnas_vista], use_container_width=True, hide_index=True)
+
 
 
 
