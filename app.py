@@ -167,11 +167,10 @@ elif menu == "📝 Ventas":
     df_cl = cargar_datos("clientes")
     df_vd = cargar_datos("vendedores")
 
-    # CREACIÓN DE PESTAÑAS
     tab_nueva, tab_editar, tab_lista = st.tabs(["✨ Nueva Venta", "✏️ Editor de Ventas", "📋 Historial"])
 
     # ---------------------------------------------------------
-    # PESTAÑA 1: NUEVA VENTA (Incluye Comisiones)
+    # PESTAÑA 1: NUEVA VENTA
     # ---------------------------------------------------------
     with tab_nueva:
         st.subheader("Registrar Contrato Nuevo")
@@ -207,32 +206,31 @@ elif menu == "📝 Ventas":
                     f_eng = c2.number_input("📥 Enganche Recibido ($)", min_value=0.0)
                     f_pla = c1.number_input("🕒 Plazo (Meses)", min_value=1, value=12)
                     
-                    # CÁLCULO DE MENSUALIDAD EN VIVO
-                    mensu_calc = (f_tot - f_eng) / f_pla if f_pla > 0 else 0
-                    c2.metric("Mensualidad Resultante", fmt_moneda(mensu_calc))
+                    # CÁLCULO DE MENSUALIDAD Y BOTÓN DE ACTUALIZACIÓN
+                    m_calc = (f_tot - f_eng) / f_pla if f_pla > 0 else 0
+                    
+                    col_m1, col_m2 = st.columns([2, 1])
+                    col_m1.metric("Mensualidad Resultante", fmt_moneda(m_calc))
+                    col_m2.write("") # Espaciador
+                    if col_m2.form_submit_button("🔄 Actualizar Cálculos"):
+                        st.rerun()
 
+                    st.markdown("---")
                     st.markdown("### 💸 Comisión de Venta")
-                    cc1, cc2 = st.columns(2)
-                    
-                    # Opción de elegir entre % o monto fijo
-                    tipo_comision = cc1.radio("Calcular por:", ["Porcentaje %", "Monto Fijo $"], horizontal=True)
-                    
-                    if tipo_comision == "Porcentaje %":
-                        pct_com = cc2.number_input("Porcentaje de comisión (%)", min_value=0.0, max_value=100.0, value=3.0, step=0.5)
-                        monto_comision = f_tot * (pct_com / 100)
-                        cc2.write(f"**Monto a pagar:** {fmt_moneda(monto_comision)}")
-                    else:
-                        monto_comision = cc2.number_input("Monto de comisión cerrado ($)", min_value=0.0, value=0.0)
+                    f_comision = st.number_input("Monto de comisión fijo ($)", min_value=0.0, value=0.0)
                     
                     st.markdown("---")
                     f_coment = st.text_area("📝 Comentarios / Notas de la venta")
 
-                    if st.form_submit_button("🚀 Finalizar y Registrar Venta"):
+                    # BOTÓN FINAL DE GUARDADO
+                    enviar_venta = st.form_submit_button("🚀 FINALIZAR Y GUARDAR VENTA")
+
+                    if enviar_venta:
                         cliente_final = f_cli_nuevo if f_cli_nuevo else f_cli_sel
                         vendedor_final = f_vende_nuevo if f_vende_nuevo else f_vende_sel
                         
                         if cliente_final == "--" or not cliente_final:
-                            st.error("❌ Por favor, asigne un cliente a la venta.")
+                            st.error("❌ Error: Debe seleccionar o registrar un cliente antes de guardar.")
                         else:
                             # 1. Registro automático de Cliente/Vendedor
                             if f_cli_nuevo:
@@ -245,21 +243,13 @@ elif menu == "📝 Ventas":
                                 df_vd = pd.concat([df_vd, pd.DataFrame([{"id_vendedor": nid_v, "nombre": f_vende_nuevo, "telefono": "", "comision_base": 0}])], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=df_vd)
 
-                            # 2. Guardar la Venta (Incluyendo la nueva columna de comisión)
+                            # 2. Guardar la Venta
                             nid_vta = int(df_v["id_venta"].max() + 1) if not df_v.empty else 1
                             nueva_v = pd.DataFrame([{
-                                "id_venta": nid_vta, 
-                                "fecha": f_fec.strftime('%Y-%m-%d'), 
-                                "ubicacion": f_lote,
-                                "cliente": cliente_final, 
-                                "vendedor": vendedor_final, 
-                                "precio_total": f_tot,
-                                "enganche": f_eng, 
-                                "plazo_meses": f_pla, 
-                                "mensualidad": mensu_calc, 
-                                "comision": monto_comision, # <--- NUEVA COLUMNA
-                                "comentarios": f_coment, 
-                                "estatus_pago": "Activo"
+                                "id_venta": nid_vta, "fecha": f_fec.strftime('%Y-%m-%d'), "ubicacion": f_lote,
+                                "cliente": cliente_final, "vendedor": vendedor_final, "precio_total": f_tot,
+                                "enganche": f_eng, "plazo_meses": f_pla, "mensualidad": m_calc, 
+                                "comision": f_comision, "comentarios": f_coment, "estatus_pago": "Activo"
                             }])
                             df_v = pd.concat([df_v, nueva_v], ignore_index=True)
                             
@@ -269,12 +259,12 @@ elif menu == "📝 Ventas":
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                             
-                            st.success(f"✅ Venta registrada. Comisión de {fmt_moneda(monto_comision)} asignada.")
+                            st.success(f"✅ Venta registrada exitosamente.")
                             st.cache_data.clear()
                             st.rerun()
 
     # ---------------------------------------------------------
-    # PESTAÑA 2: EDITOR (Para corregir montos o comisiones)
+    # PESTAÑA 2: EDITOR
     # ---------------------------------------------------------
     with tab_editar:
         st.subheader("Modificar Venta Existente")
@@ -299,14 +289,11 @@ elif menu == "📝 Ventas":
                     e_eng = c2.number_input("Enganche ($)", min_value=0.0, value=float(datos_v["enganche"]))
                     e_pla = c1.number_input("Plazo (Meses)", min_value=1, value=int(datos_v["plazo_meses"]))
                     
-                    # Comisión en el editor
                     e_com = c2.number_input("Comisión Registrada ($)", min_value=0.0, value=float(datos_v.get("comision", 0.0)))
                     
                     e_mensu = (e_tot - e_eng) / e_pla
                     c2.metric("Nueva Mensualidad", fmt_moneda(e_mensu))
                     
-                    e_coment = st.text_area("Comentarios", value=datos_v.get("comentarios", ""))
-
                     if st.form_submit_button("💾 Guardar Cambios"):
                         idx = df_v[df_v["ubicacion"] == id_ubi].index[0]
                         df_v.at[idx, "fecha"] = e_fec.strftime('%Y-%m-%d')
@@ -317,10 +304,9 @@ elif menu == "📝 Ventas":
                         df_v.at[idx, "plazo_meses"] = e_pla
                         df_v.at[idx, "mensualidad"] = e_mensu
                         df_v.at[idx, "comision"] = e_com
-                        df_v.at[idx, "comentarios"] = e_coment
                         
                         conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
-                        st.success("¡Venta y comisión actualizadas!"); st.cache_data.clear(); st.rerun()
+                        st.success("¡Actualizado!"); st.cache_data.clear(); st.rerun()
 
     with tab_lista:
         st.dataframe(df_v, use_container_width=True, hide_index=True)
@@ -398,6 +384,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
