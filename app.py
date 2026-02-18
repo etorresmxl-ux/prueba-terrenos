@@ -156,12 +156,11 @@ if menu == "🏠 Inicio":
         st.info("No hay ventas registradas.")
 
 # ==========================================
-# 📝 MÓDULO: VENTAS (Selección por Ubicación)
+# 📝 MÓDULO: VENTAS (Con Auto-registro de Clientes/Vendedores)
 # ==========================================
 elif menu == "📝 Ventas":
     st.title("📝 Gestión de Ventas y Contratos")
     
-    # Cargar bases de datos
     df_v = cargar_datos("ventas")
     df_u = cargar_datos("ubicaciones")
     df_cl = cargar_datos("clientes")
@@ -170,17 +169,12 @@ elif menu == "📝 Ventas":
     tab1, tab2 = st.tabs(["✨ Registro y Edición", "📋 Ver Historial"])
 
     with tab1:
-        # --- NUEVA LÓGICA DE SELECCIÓN ---
-        # Creamos una lista que separa lo Disponible de lo ya Vendido
         lotes_libres = df_u[df_u["estatus"] == "Disponible"]["ubicacion"].tolist()
         ventas_hechas = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist() if not df_v.empty else []
-        
-        # El selector principal ahora es la llave de todo
         opciones_selector = ["-- SELECCIONE UN LOTE DISPONIBLE --"] + lotes_libres + ["-- EDITAR VENTA EXISTENTE --"] + ventas_hechas
         
         seleccion = st.selectbox("¿Qué lote desea vender o qué venta desea editar?", opciones_selector)
 
-        # Variables iniciales (vacías)
         editando = False
         lote_a_vender = ""
         val_fec = datetime.now()
@@ -191,15 +185,12 @@ elif menu == "📝 Ventas":
         val_pla = 12
         val_coment = ""
 
-        # SI ELIGE UN LOTE DISPONIBLE
         if seleccion in lotes_libres:
             lote_a_vender = seleccion
-            # Buscamos el precio en la tabla de ubicaciones
             row_u = df_u[df_u["ubicacion"] == lote_a_vender].iloc[0]
             val_tot = float(row_u.get('precio', row_u.get('costo', 0.0)))
             st.info(f"📍 Lote seleccionado: **{lote_a_vender}** | Costo de lista: **{fmt_moneda(val_tot)}**")
 
-        # SI ELIGE EDITAR UNA VENTA
         elif " | " in seleccion:
             editando = True
             ubi_id = seleccion.split(" | ")[0]
@@ -214,7 +205,6 @@ elif menu == "📝 Ventas":
             val_coment = datos_v.get("comentarios", "")
             st.warning(f"⚠️ Editando venta de: **{lote_a_vender}**")
 
-        # SOLO MOSTRAR FORMULARIO SI SE SELECCIONÓ ALGO VÁLIDO
         if lote_a_vender != "":
             with st.form("formulario_maestro_ventas"):
                 st.write(f"### Datos de la Operación: {lote_a_vender}")
@@ -222,36 +212,58 @@ elif menu == "📝 Ventas":
                 
                 f_fec = c1.date_input("📅 Fecha de Contrato", value=val_fec)
                 
-                # Listas para selectores
-                clientes_list = ["--"] + (df_cl["nombre"].tolist() if not df_cl.empty else [])
-                f_cli = c1.selectbox("👤 Cliente", clientes_list, 
-                                    index=clientes_list.index(val_cli) if val_cli in clientes_list else 0)
+                # --- LÓGICA DE CLIENTE ---
+                st.markdown("---")
+                col_c1, col_c2 = st.columns([2, 1])
+                clientes_list = ["-- SELECCIONAR --"] + (df_cl["nombre"].tolist() if not df_cl.empty else [])
+                f_cli_sel = col_c1.selectbox("👤 Seleccionar Cliente Existente", clientes_list, 
+                                            index=clientes_list.index(val_cli) if val_cli in clientes_list else 0)
+                f_cli_nuevo = col_c2.text_input("🆕 ¿Nuevo Cliente? Escriba nombre")
                 
-                vendedores_list = ["--"] + (df_vd["nombre"].tolist() if not df_vd.empty else [])
-                f_vende = c2.selectbox("👔 Vendedor", vendedores_list,
-                                      index=vendedores_list.index(val_vende) if val_vende in vendedores_list else 0)
-                
-                st.divider()
-                
+                # --- LÓGICA DE VENDEDOR ---
+                col_v1, col_v2 = st.columns([2, 1])
+                vendedores_list = ["-- SELECCIONAR --"] + (df_vd["nombre"].tolist() if not df_vd.empty else [])
+                f_vende_sel = col_v1.selectbox("👔 Seleccionar Vendedor Existente", vendedores_list,
+                                              index=vendedores_list.index(val_vende) if val_vende in vendedores_list else 0)
+                f_vende_nuevo = col_v2.text_input("🆕 ¿Nuevo Vendedor? Escriba nombre")
+                st.markdown("---")
+
                 f_tot = c1.number_input("💵 Precio Final de Venta ($)", min_value=0.0, value=val_tot)
                 f_eng = c2.number_input("📥 Enganche Recibido ($)", min_value=0.0, value=val_eng)
                 f_pla = c1.number_input("🕒 Plazo en Meses", min_value=1, value=val_pla)
                 
-                # Cálculo de mensualidad
                 mensu_calc = (f_tot - f_eng) / f_pla if f_pla > 0 else 0
                 c2.metric("Mensualidad Resultante", fmt_moneda(mensu_calc))
                 
                 f_coment = st.text_area("📝 Comentarios de la venta", value=val_coment)
 
-                if st.form_submit_button("💾 GUARDAR REGISTRO"):
-                    if f_cli == "--":
-                        st.error("❌ Debe seleccionar un cliente.")
+                if st.form_submit_button("💾 GUARDAR REGISTRO COMPLETO"):
+                    # Determinar qué cliente usar
+                    final_cliente = f_cli_nuevo if f_cli_nuevo else f_cli_sel
+                    # Determinar qué vendedor usar
+                    final_vendedor = f_vende_nuevo if f_vende_nuevo else f_vende_sel
+
+                    if final_cliente == "-- SELECCIONAR --" or final_cliente == "":
+                        st.error("❌ Debe seleccionar o escribir un cliente.")
                     else:
+                        # 1. SI EL CLIENTE ES NUEVO, REGISTRARLO EN LA HOJA DE CLIENTES
+                        if f_cli_nuevo:
+                            new_id_c = int(df_cl["id_cliente"].max() + 1) if not df_cl.empty else 1
+                            df_cl = pd.concat([df_cl, pd.DataFrame([{"id_cliente": new_id_c, "nombre": f_cli_nuevo, "telefono": "", "correo": ""}])], ignore_index=True)
+                            conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_cl)
+
+                        # 2. SI EL VENDEDOR ES NUEVO, REGISTRARLO EN LA HOJA DE VENDEDORES
+                        if f_vende_nuevo:
+                            new_id_v = int(df_vd["id_vendedor"].max() + 1) if not df_vd.empty else 1
+                            df_vd = pd.concat([df_vd, pd.DataFrame([{"id_vendedor": new_id_v, "nombre": f_vende_nuevo, "telefono": "", "comision_base": 0}])], ignore_index=True)
+                            conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=df_vd)
+
+                        # 3. PREPARAR DATOS DE LA VENTA
                         nueva_data = {
                             "fecha": f_fec.strftime('%Y-%m-%d'),
                             "ubicacion": lote_a_vender,
-                            "cliente": f_cli,
-                            "vendedor": f_vende,
+                            "cliente": final_cliente,
+                            "vendedor": final_vendedor,
                             "precio_total": f_tot,
                             "enganche": f_eng,
                             "plazo_meses": f_pla,
@@ -273,11 +285,11 @@ elif menu == "📝 Ventas":
                         conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                         conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                         
-                        st.success("✅ ¡Operación guardada con éxito!")
+                        st.success(f"✅ Venta y registros de '{final_cliente}' procesados con éxito.")
                         st.cache_data.clear()
                         st.rerun()
         else:
-            st.info("💡 Por favor, elija un lote del menú de arriba para comenzar.")
+            st.info("💡 Elija un lote arriba para comenzar.")
 
     with tab2:
         st.dataframe(df_v, use_container_width=True, hide_index=True)
@@ -355,6 +367,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
