@@ -196,8 +196,6 @@ elif menu == "📝 Ventas":
                     f_vende_sel = col_v1.selectbox("👔 Vendedor Registrado", vendedores_list)
                     f_vende_nuevo = col_v2.text_input("🆕 Nuevo Vendedor")
                     
-                    st.markdown("---")
-                    
                     # --- FILA 2: CLIENTE ---
                     st.write("👤 **Información del Cliente**")
                     clientes_list = ["-- SELECCIONAR --"] + (df_cl["nombre"].tolist() if not df_cl.empty else [])
@@ -395,6 +393,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
