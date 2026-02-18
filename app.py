@@ -129,32 +129,131 @@ if menu == "🏠 Inicio":
         st.info("No hay ventas registradas.")
 
 # ==========================================
-# 📝 MÓDULO: VENTAS
+# 📝 MÓDULO: VENTAS (Versión Restaurada y Potenciada)
 # ==========================================
 elif menu == "📝 Ventas":
-    st.title("📝 Gestión de Ventas")
-    df_ventas = cargar_datos("ventas")
-    df_ubi = cargar_datos("ubicaciones")
-    df_cli = cargar_datos("clientes")
+    st.title("📝 Gestión de Ventas y Contratos")
+    
+    # Cargar todas las bases necesarias
+    df_v = cargar_datos("ventas")
+    df_u = cargar_datos("ubicaciones")
+    df_cl = cargar_datos("clientes")
+    df_vd = cargar_datos("vendedores") # Asegúrate de tener esta pestaña en tu Excel
 
-    with st.expander("Registrar Nueva Venta", expanded=True):
-        with st.form("form_v"):
-            lotes = df_ubi[df_ubi["estatus"] == "Disponible"]["ubicacion"].tolist()
-            f_lote = st.selectbox("Lote", lotes)
-            f_cli = st.selectbox("Cliente", df_cli["nombre"].tolist() if not df_cli.empty else ["N/A"])
-            f_fec = st.date_input("Fecha")
-            f_tot = st.number_input("Precio Total ($)", min_value=0.0)
-            f_eng = st.number_input("Enganche ($)", min_value=0.0)
-            f_pla = st.number_input("Plazo (Meses)", min_value=1, value=12)
+    tab1, tab2 = st.tabs(["✨ Nueva Venta / Editar", "📋 Historial de Ventas"])
+
+    with tab1:
+        st.subheader("Formulario de Registro")
+        
+        # Lógica para elegir si es NUEVA o EDITAR
+        opciones_v = ["-- NUEVA VENTA --"] + (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist() if not df_v.empty else ["-- NUEVA VENTA --"]
+        seleccion = st.selectbox("¿Deseas editar una venta existente?", opciones_v)
+
+        # Valores por defecto
+        val_fec = datetime.now()
+        val_lote = ""
+        val_cli = ""
+        val_vende = ""
+        val_tot = 0.0
+        val_eng = 0.0
+        val_pla = 12
+        val_coment = ""
+
+        # Si se selecciona una venta existente, rellenamos los campos
+        if seleccion != "-- NUEVA VENTA --":
+            ubi_edit = seleccion.split(" | ")[0]
+            datos_v = df_v[df_v["ubicacion"] == ubi_edit].iloc[0]
+            val_fec = pd.to_datetime(datos_v["fecha"])
+            val_lote = datos_v["ubicacion"]
+            val_cli = datos_v["cliente"]
+            val_vende = datos_v["vendedor"] if "vendedor" in df_v.columns else ""
+            val_tot = float(datos_v["precio_total"])
+            val_eng = float(datos_v["enganche"])
+            val_pla = int(datos_v["plazo_meses"])
+            val_coment = datos_v["comentarios"] if "comentarios" in df_v.columns else ""
+
+        with st.form("master_ventas"):
+            c1, c2 = st.columns(2)
             
-            if st.form_submit_button("Guardar Venta"):
-                mensu = (f_tot - f_eng) / f_pla
-                new_id = int(df_ventas["id_venta"].max() + 1) if not df_ventas.empty else 1
-                new_row = pd.DataFrame([{"id_venta": new_id, "fecha": f_fec.strftime('%Y-%m-%d'), "ubicacion": f_lote, "cliente": f_cli, "precio_total": f_tot, "enganche": f_eng, "plazo_meses": f_pla, "mensualidad": mensu, "estatus_pago": "Activo"}])
-                conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_ventas, new_row]))
-                df_ubi.loc[df_ubi["ubicacion"] == f_lote, "estatus"] = "Vendido"
-                conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_ubi)
-                st.success("Venta registrada"); st.cache_data.clear(); st.rerun()
+            # --- SECCIÓN LOTE Y PRECIO AUTOMÁTICO ---
+            lotes_disponibles = df_u[df_u["estatus"] == "Disponible"]["ubicacion"].tolist()
+            if val_lote and val_lote not in lotes_disponibles:
+                lotes_disponibles.append(val_lote) # Para que aparezca el lote que estamos editando
+            
+            f_lote = c1.selectbox("📍 Ubicación / Lote", ["--"] + lotes_disponibles, 
+                                 index=lotes_disponibles.index(val_lote)+1 if val_lote in lotes_disponibles else 0)
+            
+            # Jalar precio de la base de datos automáticamente
+            precio_db = 0.0
+            if f_lote != "--":
+                precio_db = float(df_u[df_u["ubicacion"] == f_lote].iloc[0]["precio"])
+                c1.info(f"💰 Precio de lista: {fmt_moneda(precio_db)}")
+
+            f_fec = c2.date_input("📅 Fecha de Contrato", value=val_fec)
+            
+            # --- CLIENTE Y VENDEDOR ---
+            f_cli = c1.selectbox("👤 Cliente", df_cl["nombre"].tolist() if not df_cl.empty else ["N/A"])
+            f_vende = c2.selectbox("👔 Vendedor", df_vd["nombre"].tolist() if not df_vd.empty else ["N/A"])
+            
+            # --- FINANCIERO ---
+            f_tot = c1.number_input("💵 Precio Final Acordado ($)", min_value=0.0, value=val_tot if val_tot > 0 else precio_db)
+            f_eng = c2.number_input("📥 Enganche Recibido ($)", min_value=0.0, value=val_eng)
+            f_pla = c1.number_input("🕒 Plazo (Meses)", min_value=1, value=val_pla)
+            
+            # Cálculo automático de mensualidad
+            f_mensu = (f_tot - f_eng) / f_pla if f_pla > 0 else 0
+            c2.markdown(f"**Mensualidad Calculada:** {fmt_moneda(f_mensu)}")
+            
+            f_coment = st.text_area("📝 Comentarios / Notas de la Venta", value=val_coment)
+
+            if st.form_submit_button("💾 Guardar Registro de Venta"):
+                if f_lote == "--":
+                    st.error("Por favor selecciona un lote.")
+                else:
+                    # Crear fila nueva o actualizar
+                    new_data = {
+                        "fecha": f_fec.strftime('%Y-%m-%d'),
+                        "ubicacion": f_lote,
+                        "cliente": f_cli,
+                        "vendedor": f_vende,
+                        "precio_total": f_tot,
+                        "enganche": f_eng,
+                        "plazo_meses": f_pla,
+                        "mensualidad": f_mensu,
+                        "comentarios": f_coment,
+                        "estatus_pago": "Activo"
+                    }
+
+                    if seleccion == "-- NUEVA VENTA --":
+                        # Nuevo ID
+                        nid = int(df_v["id_venta"].max() + 1) if not df_v.empty else 1
+                        new_data["id_venta"] = nid
+                        df_v = pd.concat([df_v, pd.DataFrame([new_data])], ignore_index=True)
+                        # Marcar como vendido
+                        df_u.loc[df_u["ubicacion"] == f_lote, "estatus"] = "Vendido"
+                    else:
+                        # Actualizar existente
+                        for key, value in new_data.items():
+                            df_v.loc[df_v["ubicacion"] == ubi_edit, key] = value
+                    
+                    conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
+                    conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
+                    st.success("✅ Venta procesada correctamente")
+                    st.cache_data.clear()
+                    st.rerun()
+
+    with tab2:
+        st.subheader("Resumen General")
+        st.dataframe(df_v, use_container_width=True, hide_index=True)
+
+    # --- BOTONES DE ACCESO RÁPIDO ---
+    st.divider()
+    st.write("### ⚡ Acciones Rápidas")
+    col_a, col_b = st.columns(2)
+    if col_a.button("➕ Ir a Registrar Nuevo Cliente"):
+        st.info("Ve al módulo '👥 Clientes' en el menú lateral.")
+    if col_b.button("👔 Registrar Nuevo Vendedor"):
+        st.info("Por favor, asegúrate de que exista la pestaña 'vendedores' en tu Excel.")
 
 # ==========================================
 # 📊 MÓDULO: DETALLE DE CRÉDITO
@@ -229,3 +328,4 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
