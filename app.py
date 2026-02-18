@@ -577,7 +577,7 @@ elif menu == "💸 Gastos":
             st.success("Gasto guardado"); st.cache_data.clear(); st.rerun()
 
 # ==========================================
-# 📍 MÓDULO: UBICACIONES (Automatizado)
+# 📍 MÓDULO: UBICACIONES (Con ID Automático)
 # ==========================================
 elif menu == "📍 Ubicaciones":
     st.title("📍 Control de Inventario")
@@ -591,15 +591,15 @@ elif menu == "📍 Ubicaciones":
 
     df_mostrar = df_u.copy()
     if ocultar_vendidos:
-        # Solo muestra los que NO están vendidos
         df_mostrar = df_u[df_u["estatus"] == "Disponible"]
 
+    # Mostrar tabla con ID al principio
     st.dataframe(df_mostrar, use_container_width=True, hide_index=True)
 
     tab_nueva, tab_editar = st.tabs(["✨ Agregar Ubicación", "✏️ Editar Registro"])
 
     # ---------------------------------------------------------
-    # PESTAÑA 1: AGREGAR NUEVA UBICACIÓN (Generación Automática)
+    # PESTAÑA 1: AGREGAR NUEVA UBICACIÓN
     # ---------------------------------------------------------
     with tab_nueva:
         with st.form("form_nueva_ubi"):
@@ -612,26 +612,34 @@ elif menu == "📍 Ubicaciones":
             f_fase = c1.text_input("🏗️ Fase / Etapa", placeholder="Ej: Fase 1")
             f_pre = c2.number_input("💵 Precio de Lista ($)", min_value=0.0, step=1000.0)
             
-            st.info("💡 El estatus se registrará como **Disponible** y la ubicación como **M" + str(f_manzana).zfill(2) + "-L" + str(f_lote).zfill(2) + "**")
+            # Cálculo visual previo del ID y Ubicación
+            nuevo_id_sugerido = 1
+            if not df_u.empty and "id_lote" in df_u.columns:
+                try:
+                    nuevo_id_sugerido = int(float(df_u["id_lote"].max())) + 1
+                except:
+                    nuevo_id_sugerido = len(df_u) + 1
+            
+            nombre_gen = f"M{str(f_manzana).zfill(2)}-L{str(f_lote).zfill(2)}"
+            
+            st.info(f"🆔 Se registrará con el **ID: {nuevo_id_sugerido}** | Ubicación: **{nombre_gen}**")
 
             if st.form_submit_button("➕ AGREGAR AL INVENTARIO"):
-                # Generar nombre automático: M01-L05
-                nombre_generado = f"M{str(f_manzana).zfill(2)}-L{str(f_lote).zfill(2)}"
-                
-                # Crear nuevo registro
+                # Crear nuevo registro con ID automático
                 nueva_fila = pd.DataFrame([{
-                    "ubicacion": nombre_generado,
+                    "id_lote": nuevo_id_sugerido,
+                    "ubicacion": nombre_gen,
                     "manzana": f_manzana,
                     "lote": f_lote,
                     "fase": f_fase,
                     "precio": f_pre,
-                    "estatus": "Disponible" # Default automático
+                    "estatus": "Disponible"
                 }])
                 
                 df_u = pd.concat([df_u, nueva_fila], ignore_index=True)
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                 
-                st.success(f"✅ Ubicación {nombre_generado} agregada correctamente.")
+                st.success(f"✅ Lote {nombre_gen} (ID: {nuevo_id_sugerido}) agregado correctamente.")
                 st.cache_data.clear()
                 st.rerun()
 
@@ -642,18 +650,19 @@ elif menu == "📍 Ubicaciones":
         if df_u.empty:
             st.info("No hay ubicaciones para editar.")
         else:
-            ubi_lista = df_u["ubicacion"].tolist()
-            u_sel = st.selectbox("Seleccione la ubicación a modificar:", ["--"] + ubi_lista)
+            # Lista de selección mostrando ID y Ubicación
+            ubi_lista = (df_u["id_lote"].astype(str) + " | " + df_u["ubicacion"]).tolist()
+            u_sel = st.selectbox("Seleccione la ubicación por ID:", ["--"] + ubi_lista)
             
             if u_sel != "--":
-                idx = df_u[df_u["ubicacion"] == u_sel].index[0]
+                id_u_sel = int(float(u_sel.split(" | ")[0]))
+                idx = df_u[df_u["id_lote"].astype(float).astype(int) == id_u_sel].index[0]
                 row = df_u.loc[idx]
                 
                 with st.form("form_edit_ubi"):
-                    st.write(f"✏️ Editando: **{u_sel}**")
+                    st.write(f"✏️ Editando ID: **{id_u_sel}** ({row['ubicacion']})")
                     ce1, ce2 = st.columns(2)
                     
-                    # Permite corregir precio y estatus principalmente
                     e_pre = ce1.number_input("Precio Actualizado ($)", min_value=0.0, value=float(row.get("precio", 0.0)))
                     e_est = ce2.selectbox("Estatus", ["Disponible", "Vendido", "Apartado", "Bloqueado"], 
                                          index=["Disponible", "Vendido", "Apartado", "Bloqueado"].index(row["estatus"]))
@@ -667,12 +676,12 @@ elif menu == "📍 Ubicaciones":
                         df_u.at[idx, "fase"] = e_fas
                         
                         conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                        st.success("Inventario actualizado."); st.cache_data.clear(); st.rerun()
+                        st.success("Cambios guardados con éxito."); st.cache_data.clear(); st.rerun()
                         
                     if col_b2.form_submit_button("🗑️ ELIMINAR"):
                         df_u = df_u.drop(idx)
                         conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                        st.error("Eliminado."); st.cache_data.clear(); st.rerun()
+                        st.error("Ubicación eliminada."); st.cache_data.clear(); st.rerun()
 
 # ==========================================
 # 👥 MÓDULO: CLIENTES
@@ -689,4 +698,5 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
