@@ -498,74 +498,102 @@ elif menu == "💸 Comisiones":
                 conn.update(spreadsheet=URL_SHEET, worksheet="pagos_comisiones", data=pd.concat([df_pc, nuevo], ignore_index=True))
                 st.success("Pagado"); st.cache_data.clear(); st.rerun()
 
-# --- MÓDULO: CATALOGO (VISTA LIMPIA Y MINIMALISTA) ---
+# --- MÓDULO: CATALOGO (INVENTARIO CON FASE) ---
 elif menu == "📍 Catálogo":
     tab_cat1, tab_cat2 = st.tabs(["📋 Ver Inventario", "🏗️ Gestionar Lotes"])
     
     df_cat = cargar_datos("ubicaciones")
     
-    # --- PESTAÑA 1: VISTA DE CLIENTE / VENTAS ---
+    # --- PESTAÑA 1: VISTA DE INVENTARIO ---
     with tab_cat1:
         st.subheader("Estado Actual del Inventario")
         if not df_cat.empty:
-            solo_disponibles = st.toggle("Mostrar solo disponibles", value=True)
-            
-            df_mostrar = df_cat.copy()
-            if solo_disponibles:
-                df_mostrar = df_mostrar[df_mostrar["estatus"] == "Disponible"]
+            # Filtros rápidos
+            c_f1, c_f2 = st.columns(2)
+            with c_f1:
+                solo_dis = st.toggle("Mostrar solo disponibles", value=True)
+            with c_f2:
+                # Opcional: Filtro por Fase
+                fases_disponibles = sorted(df_cat["fase"].unique().tolist()) if "fase" in df_cat.columns else []
+                filtro_fase = st.multiselect("Filtrar por Fase", options=fases_disponibles)
 
-            # Lógica de colores: Solo verde para disponibles, el resto sin fondo
+            df_mostrar = df_cat.copy()
+            if solo_dis:
+                df_mostrar = df_mostrar[df_mostrar["estatus"] == "Disponible"]
+            if filtro_fase:
+                df_mostrar = df_mostrar[df_mostrar["fase"].isin(filtro_fase)]
+
+            # Lógica de colores: Solo verde para disponibles
             def estilo_estatus(val):
                 if val == 'Disponible':
                     return 'background-color: #09AB3B; color: white; font-weight: bold'
-                return 'color: #808495' # Gris suave para vendidos/apartados, sin fondo de color
+                return 'color: #808495'
 
-            cols = ["ubicacion", "precio", "estatus"]
+            # Definimos el orden de las columnas: Ubicacion -> Fase -> Precio -> Estatus
+            cols = ["ubicacion", "fase", "precio", "estatus"]
+            
+            # Aseguramos que existan las columnas para evitar errores de visualización
+            for c in cols:
+                if c not in df_mostrar.columns: df_mostrar[c] = 0
+
             st.dataframe(
                 df_mostrar[cols].style.applymap(estilo_estatus, subset=['estatus']),
                 hide_index=True,
                 use_container_width=True,
                 column_config={
-                    "precio": st.column_config.NumberColumn("Precio de Lista", format="$ %.2f"),
                     "ubicacion": "Lote",
+                    "fase": st.column_config.NumberColumn("Fase", format="%d"),
+                    "precio": st.column_config.NumberColumn("Precio de Lista", format="$ %.2f"),
                     "estatus": "Estado"
                 }
             )
             
-            # Métricas rápidas
+            # Métricas
             c_m1, c_m2 = st.columns(2)
             c_m1.metric("Lotes Disponibles", len(df_cat[df_cat["estatus"] == "Disponible"]))
             c_m2.metric("Valor Total Disponible", fmt_moneda(df_cat[df_cat["estatus"] == "Disponible"]["precio"].sum()))
         else:
             st.info("No hay ubicaciones registradas.")
 
-    # --- PESTAÑA 2: ALTAS Y EDICIONES ---
+    # --- PESTAÑA 2: GESTIÓN Y ALTAS ---
     with tab_cat2:
         st.subheader("Control de Inventario")
         
         with st.expander("➕ Dar de alta nuevo Lote"):
             with st.form("nuevo_lote"):
-                n_ubi = st.text_input("Identificador (ej: L-01)")
-                n_pre = st.number_input("Precio ($)", min_value=0.0, step=1000.0)
-                n_est = st.selectbox("Estatus Inicial", ["Disponible", "Vendido", "Apartado"])
+                col_n1, col_n2 = st.columns(2)
+                with col_n1:
+                    n_ubi = st.text_input("Identificador del Lote (ej: L-01)")
+                    n_fase = st.number_input("Fase", min_value=1, step=1, value=1)
+                with col_n2:
+                    n_pre = st.number_input("Precio ($)", min_value=0.0, step=1000.0)
+                    n_est = st.selectbox("Estatus Inicial", ["Disponible", "Vendido", "Apartado"])
                 
                 if st.form_submit_button("Guardar en Inventario"):
                     if n_ubi and n_pre > 0:
                         nuevo_id = int(df_cat["id_ubi"].max()) + 1 if (not df_cat.empty and "id_ubi" in df_cat.columns) else 1
-                        nuevo_reg = pd.DataFrame([{"id_ubi": nuevo_id, "ubicacion": n_ubi, "precio": n_pre, "estatus": n_est}])
+                        nuevo_reg = pd.DataFrame([{
+                            "id_ubi": nuevo_id,
+                            "ubicacion": n_ubi,
+                            "fase": n_fase,
+                            "precio": n_pre,
+                            "estatus": n_est
+                        }])
                         conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=pd.concat([df_cat, nuevo_reg], ignore_index=True))
-                        st.success("Lote agregado."); st.cache_data.clear(); st.rerun()
+                        st.success(f"Lote {n_ubi} (Fase {n_fase}) agregado."); st.cache_data.clear(); st.rerun()
 
         st.divider()
         
         if not df_cat.empty:
-            st.write("🔧 **Edición de Inventario**")
+            st.write("🔧 **Edición Rápida del Catálogo**")
+            # En el editor permitimos editar la fase también
             edited_cat = st.data_editor(
                 df_cat,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
                     "id_ubi": None,
+                    "fase": st.column_config.NumberColumn(step=1),
                     "precio": st.column_config.NumberColumn(format="$ %.2f"),
                     "estatus": st.column_config.SelectboxColumn(options=["Disponible", "Vendido", "Apartado"])
                 }
@@ -573,7 +601,7 @@ elif menu == "📍 Catálogo":
             
             if st.button("💾 Guardar Cambios"):
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=edited_cat)
-                st.success("Sincronizado."); st.cache_data.clear(); st.rerun()
+                st.success("Catálogo actualizado."); st.cache_data.clear(); st.rerun()
 
 # --- MÓDULO: DIRECTORIO (GESTIÓN CON ID) ---
 elif menu == "📇 Directorio":
@@ -651,3 +679,4 @@ elif menu == "📇 Directorio":
         # Mostramos la tabla incluyendo el ID al principio
         columnas_vista = [col_id, "nombre", "telefono", "correo"]
         st.dataframe(df_dir[columnas_vista], use_container_width=True, hide_index=True)
+
