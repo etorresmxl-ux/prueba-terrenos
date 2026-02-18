@@ -215,7 +215,9 @@ elif menu == "👥 Clientes":
             if st.form_submit_button("Registrar"):
                 nc = pd.DataFrame([{"id_cliente": len(df_cl)+1, "nombre": nom, "telefono": tel}])
                 conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nc]))
-                st.cache_data.clear(); st.rerun()import streamlit as st
+                st.cache_data.clear(); st.rerun()
+
+import streamlit as st
 import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -814,6 +816,4 @@ elif menu == "📇 Directorio":
             st.table(df_vd[["id_vendedor", "nombre", "telefono", "comision_base", "estatus"]])
         else:
             st.info("No hay vendedores registrados en el equipo.")
-
-
 
