@@ -192,71 +192,87 @@ if menu == "🏠 Inicio":
             st.write("**Recaudación mensual estimada:**")
             st.info(f"### {fmt_moneda(mensualidad_esperada)}")
 
-# --- MÓDULO: VENTAS (CORREGIDO CON AUTO-CARGA DE PRECIO) ---
+# --- MÓDULO: VENTAS (CÓDIGO COMPLETO Y CORREGIDO) ---
 elif menu == "📝 Ventas":
     st.subheader("Registro de Nuevos Contratos")
+    
+    # Carga de datos necesarios
     df_v = cargar_datos("ventas")
     df_u = cargar_datos("ubicaciones")
     df_cl = cargar_datos("clientes")
     df_vd = cargar_datos("vendedores")
 
     if df_u.empty:
-        st.warning("Primero debes agregar ubicaciones en el Catálogo.")
+        st.warning("⚠️ El catálogo de ubicaciones está vacío. Registra lotes primero.")
     else:
         with st.expander("➕ Registrar Nueva Venta", expanded=True):
-            # 1. SELECCIÓN DE UBICACIÓN (Fuera del form para disparar la búsqueda de precio)
+            # 1. SELECCIÓN DE LOTE (Fuera del form para reactividad)
             lotes_disp = df_u[df_u["estatus"] == "Disponible"]["ubicacion"].tolist()
             
-            col_sel1, col_sel2 = st.columns(2)
+            col_sel1, col_sel2 = st.columns([2, 1])
             with col_sel1:
                 f_lote = st.selectbox("1. Seleccione Lote/Ubicación", options=["-- Seleccionar --"] + lotes_disp)
             
-            # 2. BÚSQUEDA AUTOMÁTICA DE PRECIO
+            # 2. BÚSQUEDA AUTOMÁTICA DE PRECIO Y FASE
             precio_sugerido = 0.0
-            fase_sugerida = 0
+            fase_lote = 0
             if f_lote != "-- Seleccionar --":
                 datos_lote = df_u[df_u["ubicacion"] == f_lote].iloc[0]
                 precio_sugerido = float(datos_lote["precio"])
-                fase_sugerida = datos_lote["fase"]
-                st.info(f"📍 **Datos del Lote:** Fase {fase_sugerida} | Precio de Lista: {fmt_moneda(precio_sugerido)}")
+                fase_lote = datos_lote["fase"] if "fase" in datos_lote else 0
+                st.info(f"📍 **Datos del Lote:** Fase {fase_lote} | Precio de Lista: {fmt_moneda(precio_sugerido)}")
 
-            # 3. FORMULARIO DE DETALLES
-            with st.form("form_ventas_final"):
+            # 3. FORMULARIO DE DETALLES DE VENTA
+            with st.form("form_registro_ventas", clear_on_submit=True):
                 c1, c2, c3 = st.columns(3)
                 
                 with c1:
-                    # Selección de Cliente con ID
-                    df_cl['display'] = df_cl['id_cliente'].astype(str) + " | " + df_cl['nombre']
-                    f_cliente = st.selectbox("Cliente", options=df_cl['display'].tolist())
-                    f_vendedor = st.selectbox("Vendedor", options=df_vd['nombre'].tolist())
+                    # Selección de Cliente (ID | Nombre)
+                    if not df_cl.empty:
+                        df_cl['display'] = df_cl['id_cliente'].astype(str) + " | " + df_cl['nombre']
+                        f_cliente_full = st.selectbox("Cliente", options=df_cl['display'].tolist())
+                    else:
+                        f_cliente_full = st.text_input("Nombre del Cliente (Sin catálogo)")
+
+                    f_vendedor = st.selectbox("Vendedor", options=df_vd['nombre'].tolist() if not df_vd.empty else ["Directo"])
                 
                 with c2:
                     f_fecha = st.date_input("Fecha de Contrato", value=datetime.now())
-                    # El campo de precio ahora toma el precio_sugerido automáticamente 
                     f_total = st.number_input("Precio de Venta Final ($)", min_value=0.0, value=precio_sugerido, step=1000.0)
                 
                 with c3:
                     f_enganche = st.number_input("Enganche ($)", min_value=0.0, step=1000.0)
                     f_plazo = st.number_input("Plazo (Meses)", min_value=1, step=1, value=12)
                 
-                f_comenta = st.text_area("Notas adicionales")
+                f_comenta = st.text_area("Notas / Comentarios del Contrato")
                 
-                # Cálculo informativo de mensualidad
+                # Cálculo informativo
                 m_mensual = (f_total - f_enganche) / f_plazo if f_plazo > 0 else 0
-                st.write(f"**Mensualidad resultante:** {fmt_moneda(m_mensual)}")
+                st.write(f"**Mensualidad Calculada:** {fmt_moneda(m_mensual)}")
 
-                if st.form_submit_button("Confirmar y Guardar Venta", type="primary"):
+                # BOTÓN DE GUARDAR
+                if st.form_submit_button("Cerrar Venta y Generar Contrato", type="primary"):
                     if f_lote == "-- Seleccionar --":
-                        st.error("Debes seleccionar una ubicación.")
+                        st.error("Por favor, selecciona un lote válido.")
                     elif f_total <= 0:
-                        st.error("El precio de venta debe ser mayor a 0.")
+                        st.error("El precio de venta no puede ser cero.")
                     else:
-                        # Registro de la venta
+                        # --- LÓGICA ANTI-ERROR PARA ID_VENTA ---
+                        if df_v.empty or "id_venta" not in df_v.columns:
+                            nuevo_id = 1
+                        else:
+                            # Limpieza de IDs para evitar errores de tipo
+                            ids_limpios = pd.to_numeric(df_v["id_venta"], errors='coerce').dropna()
+                            nuevo_id = int(ids_limpios.max() + 1) if not ids_limpios.empty else 1
+
+                        # Preparar nuevo registro
+                        cliente_nombre = f_cliente_full.split(" | ")[1] if " | " in f_cliente_full else f_cliente_full
+                        
                         nueva_v = pd.DataFrame([{
-                            "id_venta": int(df_v["id_venta"].max()) + 1 if not df_v.empty else 1,
+                            "id_venta": nuevo_id,
                             "fecha": f_fecha.strftime('%Y-%m-%d'),
                             "ubicacion": f_lote,
-                            "cliente": f_cliente.split(" | ")[1],
+                            "cliente": cliente_nombre,
                             "vendedor": f_vendedor,
                             "precio_total": round(f_total, 2),
                             "enganche": round(f_enganche, 2),
@@ -265,16 +281,38 @@ elif menu == "📝 Ventas":
                             "estatus_pago": "Activo"
                         }])
                         
-                        # Actualizar Sheets
-                        conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=pd.concat([df_v, nueva_v], ignore_index=True))
+                        # 1. Guardar en Ventas
+                        df_v_final = pd.concat([df_v, nueva_v], ignore_index=True)
+                        conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v_final)
+                        
+                        # 2. Actualizar Catálogo (Marcar como Vendido)
                         df_u.loc[df_u["ubicacion"] == f_lote, "estatus"] = "Vendido"
                         conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                         
-                        st.success(f"Venta registrada. Lote {f_lote} marcado como Vendido."); st.cache_data.clear(); st.rerun()
+                        st.success(f"✅ ¡Venta registrada exitosamente! Folio: {nuevo_id}")
+                        st.cache_data.clear()
+                        st.rerun()
 
     st.divider()
-    st.subheader("Historial de Contratos")
-    st.dataframe(df_v, use_container_width=True, hide_index=True)
+    
+    # --- VISUALIZACIÓN DEL HISTORIAL ---
+    st.subheader("📜 Historial de Ventas Realizadas")
+    if not df_v.empty:
+        # Formatear columnas para que se vean como dinero
+        st.dataframe(
+            df_v.sort_values("id_venta", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "id_venta": st.column_config.NumberColumn("ID"),
+                "precio_total": st.column_config.NumberColumn("Total", format="$ %.2f"),
+                "enganche": st.column_config.NumberColumn("Enganche", format="$ %.2f"),
+                "mensualidad": st.column_config.NumberColumn("Mensualidad", format="$ %.2f"),
+                "fecha": st.column_config.DateColumn("Fecha")
+            }
+        )
+    else:
+        st.info("No hay ventas registradas aún.")
 
 # --- MÓDULO: DETALLE DE CRÉDITO (VISTA COMPACTA) ---
 elif menu == "📊 Detalle de Crédito":
@@ -709,6 +747,7 @@ elif menu == "📇 Directorio":
         # Mostramos la tabla incluyendo el ID al principio
         columnas_vista = [col_id, "nombre", "telefono", "correo"]
         st.dataframe(df_dir[columnas_vista], use_container_width=True, hide_index=True)
+
 
 
 
