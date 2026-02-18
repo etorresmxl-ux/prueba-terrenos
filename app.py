@@ -156,7 +156,7 @@ if menu == "🏠 Inicio":
         st.info("No hay ventas registradas.")
 
 # ==========================================
-# 📝 MÓDULO: VENTAS
+# 📝 MÓDULO: VENTAS (Diseño Equilibrado)
 # ==========================================
 elif menu == "📝 Ventas":
     st.title("📝 Gestión de Ventas")
@@ -187,52 +187,60 @@ elif menu == "📝 Ventas":
                 st.info(f"💰 Costo de Lista para {f_lote}: {fmt_moneda(costo_base)}")
 
                 with st.form("form_nueva_venta"):
+                    # --- FILA 1: FECHA Y VENDEDOR ---
                     c1, c2 = st.columns(2)
                     f_fec = c1.date_input("📅 Fecha de Contrato", value=datetime.now())
                     
-                    st.markdown("---")
-                    # Sección Cliente y Vendedor
-                    col_c1, col_c2 = st.columns([2, 1])
-                    f_cli_sel = col_c1.selectbox("👤 Cliente Existente", ["--"] + (df_cl["nombre"].tolist() if not df_cl.empty else []))
-                    f_cli_nuevo = col_c2.text_input("🆕 ¿Nuevo Cliente?")
-                    
+                    vendedores_list = ["-- SELECCIONAR --"] + (df_vd["nombre"].tolist() if not df_vd.empty else [])
                     col_v1, col_v2 = st.columns([2, 1])
-                    f_vende_sel = col_v1.selectbox("👔 Vendedor Existente", ["--"] + (df_vd["nombre"].tolist() if not df_vd.empty else []))
-                    f_vende_nuevo = col_v2.text_input("🆕 ¿Nuevo Vendedor?")
+                    f_vende_sel = col_v1.selectbox("👔 Vendedor Registrado", vendedores_list)
+                    f_vende_nuevo = col_v2.text_input("🆕 Nuevo Vendedor")
                     
                     st.markdown("---")
-                    # Sección Financiera
-                    f_tot = c1.number_input("💵 Precio Final de Venta ($)", min_value=0.0, value=costo_base)
-                    f_eng = c2.number_input("📥 Enganche Recibido ($)", min_value=0.0)
-                    f_pla = c1.number_input("🕒 Plazo (Meses)", min_value=1, value=12)
                     
-                    # CÁLCULO DE MENSUALIDAD Y BOTÓN DE ACTUALIZACIÓN
+                    # --- FILA 2: CLIENTE ---
+                    st.write("👤 **Información del Cliente**")
+                    clientes_list = ["-- SELECCIONAR --"] + (df_cl["nombre"].tolist() if not df_cl.empty else [])
+                    col_c1, col_c2 = st.columns([2, 1])
+                    f_cli_sel = col_c1.selectbox("Cliente Registrado", clientes_list)
+                    f_cli_nuevo = col_c2.text_input("🆕 Nuevo Cliente")
+                    
+                    st.markdown("---")
+
+                    # --- FILA 3: FINANZAS (DISEÑO EQUILIBRADO) ---
+                    st.write("💰 **Condiciones Financieras**")
+                    cf1, cf2 = st.columns(2)
+                    f_tot = cf1.number_input("Precio Final de Venta ($)", min_value=0.0, value=costo_base)
+                    f_eng = cf2.number_input("Enganche Recibido ($)", min_value=0.0)
+                    
+                    # El plazo ahora está a la derecha
+                    cf1_b, cf2_b = st.columns(2)
+                    f_comision = cf1_b.number_input("Monto de Comisión ($)", min_value=0.0, value=0.0)
+                    f_pla = cf2_b.number_input("🕒 Plazo en Meses", min_value=1, value=12)
+                    
+                    st.markdown("---")
+                    
+                    # --- FILA 4: MÉTRICA Y BOTÓN DE ACTUALIZACIÓN ---
                     m_calc = (f_tot - f_eng) / f_pla if f_pla > 0 else 0
                     
-                    col_m1, col_m2 = st.columns([2, 1])
-                    col_m1.metric("Mensualidad Resultante", fmt_moneda(m_calc))
-                    col_m2.write("") # Espaciador
-                    if col_m2.form_submit_button("🔄 Actualizar Cálculos"):
+                    col_met, col_btn = st.columns([2, 1])
+                    col_met.metric("Mensualidad Resultante", fmt_moneda(m_calc))
+                    
+                    # Este botón permite refrescar la mensualidad sin validar el cliente
+                    if col_btn.form_submit_button("🔄 Actualizar Cálculos"):
                         st.rerun()
 
-                    st.markdown("---")
-                    st.markdown("### 💸 Comisión de Venta")
-                    f_comision = st.number_input("Monto de comisión fijo ($)", min_value=0.0, value=0.0)
-                    
-                    st.markdown("---")
-                    f_coment = st.text_area("📝 Comentarios / Notas de la venta")
+                    f_coment = st.text_area("📝 Comentarios de la venta")
 
-                    # BOTÓN FINAL DE GUARDADO
-                    enviar_venta = st.form_submit_button("🚀 FINALIZAR Y GUARDAR VENTA")
-
-                    if enviar_venta:
+                    # --- BOTÓN FINAL DE GUARDADO ---
+                    if st.form_submit_button("💾 GUARDAR VENTA", type="primary"):
                         cliente_final = f_cli_nuevo if f_cli_nuevo else f_cli_sel
                         vendedor_final = f_vende_nuevo if f_vende_nuevo else f_vende_sel
                         
-                        if cliente_final == "--" or not cliente_final:
-                            st.error("❌ Error: Debe seleccionar o registrar un cliente antes de guardar.")
+                        if cliente_final == "-- SELECCIONAR --" or not cliente_final:
+                            st.error("❌ Error: Debe asignar un cliente para poder guardar la venta.")
                         else:
-                            # 1. Registro automático de Cliente/Vendedor
+                            # Registro automático si son nuevos
                             if f_cli_nuevo:
                                 nid_c = int(df_cl["id_cliente"].max() + 1) if not df_cl.empty else 1
                                 df_cl = pd.concat([df_cl, pd.DataFrame([{"id_cliente": nid_c, "nombre": f_cli_nuevo, "telefono": "", "correo": ""}])], ignore_index=True)
@@ -243,7 +251,7 @@ elif menu == "📝 Ventas":
                                 df_vd = pd.concat([df_vd, pd.DataFrame([{"id_vendedor": nid_v, "nombre": f_vende_nuevo, "telefono": "", "comision_base": 0}])], ignore_index=True)
                                 conn.update(spreadsheet=URL_SHEET, worksheet="vendedores", data=df_vd)
 
-                            # 2. Guardar la Venta
+                            # Guardar la Venta
                             nid_vta = int(df_v["id_venta"].max() + 1) if not df_v.empty else 1
                             nueva_v = pd.DataFrame([{
                                 "id_venta": nid_vta, "fecha": f_fec.strftime('%Y-%m-%d'), "ubicacion": f_lote,
@@ -253,13 +261,13 @@ elif menu == "📝 Ventas":
                             }])
                             df_v = pd.concat([df_v, nueva_v], ignore_index=True)
                             
-                            # 3. Marcar lote como vendido
+                            # Actualizar lote
                             df_u.loc[df_u["ubicacion"] == f_lote, "estatus"] = "Vendido"
                             
                             conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                             conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
                             
-                            st.success(f"✅ Venta registrada exitosamente.")
+                            st.success("✅ Venta registrada con éxito.")
                             st.cache_data.clear()
                             st.rerun()
 
@@ -280,19 +288,21 @@ elif menu == "📝 Ventas":
                 
                 with st.form("form_editor_ventas"):
                     st.write(f"✏️ Editando: **{id_ubi}**")
-                    c1, c2 = st.columns(2)
-                    e_fec = c1.date_input("Fecha", value=pd.to_datetime(datos_v["fecha"]))
-                    e_cli = c1.selectbox("Cliente", df_cl["nombre"].tolist() if not df_cl.empty else [], index=df_cl["nombre"].tolist().index(datos_v["cliente"]) if datos_v["cliente"] in df_cl["nombre"].tolist() else 0)
-                    e_vende = c2.selectbox("Vendedor", df_vd["nombre"].tolist() if not df_vd.empty else [], index=df_vd["nombre"].tolist().index(datos_v["vendedor"]) if datos_v["vendedor"] in df_vd["nombre"].tolist() else 0)
+                    ce1, ce2 = st.columns(2)
+                    e_fec = ce1.date_input("Fecha", value=pd.to_datetime(datos_v["fecha"]))
+                    e_cli = ce1.selectbox("Cliente", df_cl["nombre"].tolist() if not df_cl.empty else [], index=df_cl["nombre"].tolist().index(datos_v["cliente"]) if datos_v["cliente"] in df_cl["nombre"].tolist() else 0)
+                    e_vende = ce2.selectbox("Vendedor", df_vd["nombre"].tolist() if not df_vd.empty else [], index=df_vd["nombre"].tolist().index(datos_v["vendedor"]) if datos_v["vendedor"] in df_vd["nombre"].tolist() else 0)
                     
-                    e_tot = c1.number_input("Precio Final ($)", min_value=0.0, value=float(datos_v["precio_total"]))
-                    e_eng = c2.number_input("Enganche ($)", min_value=0.0, value=float(datos_v["enganche"]))
-                    e_pla = c1.number_input("Plazo (Meses)", min_value=1, value=int(datos_v["plazo_meses"]))
+                    e1, e2 = st.columns(2)
+                    e_tot = e1.number_input("Precio Final ($)", min_value=0.0, value=float(datos_v["precio_total"]))
+                    e_eng = e2.number_input("Enganche ($)", min_value=0.0, value=float(datos_v["enganche"]))
                     
-                    e_com = c2.number_input("Comisión Registrada ($)", min_value=0.0, value=float(datos_v.get("comision", 0.0)))
+                    e1_b, e2_b = st.columns(2)
+                    e_com = e1_b.number_input("Comisión ($)", min_value=0.0, value=float(datos_v.get("comision", 0.0)))
+                    e_pla = e2_b.number_input("Plazo (Meses)", min_value=1, value=int(datos_v["plazo_meses"]))
                     
                     e_mensu = (e_tot - e_eng) / e_pla
-                    c2.metric("Nueva Mensualidad", fmt_moneda(e_mensu))
+                    st.metric("Nueva Mensualidad", fmt_moneda(e_mensu))
                     
                     if st.form_submit_button("💾 Guardar Cambios"):
                         idx = df_v[df_v["ubicacion"] == id_ubi].index[0]
@@ -306,8 +316,9 @@ elif menu == "📝 Ventas":
                         df_v.at[idx, "comision"] = e_com
                         
                         conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
-                        st.success("¡Actualizado!"); st.cache_data.clear(); st.rerun()
+                        st.success("¡Datos actualizados!"); st.cache_data.clear(); st.rerun()
 
+    # PESTAÑA 3: HISTORIAL
     with tab_lista:
         st.dataframe(df_v, use_container_width=True, hide_index=True)
 
@@ -384,6 +395,7 @@ elif menu == "👥 Clientes":
             conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=pd.concat([df_cl, nuevo]))
             st.success("Cliente agregado"); st.cache_data.clear(); st.rerun()
     st.dataframe(df_cl, use_container_width=True, hide_index=True)
+
 
 
 
