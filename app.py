@@ -339,59 +339,66 @@ elif menu == "📊 Detalle de Crédito":
         ubi_sel = seleccion.split(" | ")[0]
         v = df_v[df_v["ubicacion"] == ubi_sel].iloc[0]
         
-        # --- CÁLCULOS FINANCIEROS ---
-        pagos_cliente = df_p[df_p["ubicacion"] == ubi_sel] if not df_p.empty else pd.DataFrame()
-        total_pagado_historico = pagos_cliente["monto"].sum() if not pagos_cliente.empty else 0
-        
-        precio_vta = float(v['precio_total'])
+        # --- CÁLCULOS FINANCIEROS ACTUALIZADOS ---
+        # 1. Montos base del contrato
+        precio_total_vta = float(v['precio_total'])
         enganche_vta = float(v['enganche'])
-        monto_credito = precio_vta - enganche_vta
+        monto_a_financiar = precio_total_vta - enganche_vta
+        
+        # 2. Suma de abonos mensuales
+        abonos_mensuales = df_p[df_p["ubicacion"] == ubi_sel]["monto"].sum() if not df_p.empty else 0
+        
+        # 3. TOTAL PAGADO (Enganche + Abonos)
+        total_pagado_acumulado = enganche_vta + abonos_mensuales
+        
+        # 4. Cálculo de avance (Sobre el costo total)
+        porcentaje_total = (total_pagado_acumulado / precio_total_vta) if precio_total_vta > 0 else 0
+        porcentaje_total = min(1.0, porcentaje_total)
+
+        # 5. Cálculos de morosidad (Estos se basan solo en las mensualidades vencidas)
         mensualidad_pactada = float(v['mensualidad'])
         fecha_contrato = pd.to_datetime(v['fecha'])
         hoy = datetime.now()
-
-        # Cálculo de avance del crédito
-        # Porcentaje basado en el monto a financiar
-        porcentaje_pagado = (total_pagado_historico / monto_credito) if monto_credito > 0 else 0
-        porcentaje_pagado = min(1.0, porcentaje_pagado) # Topar al 100%
-
-        # Cálculos de morosidad
+        
         meses_transcurridos = (hoy.year - fecha_contrato.year) * 12 + (hoy.month - fecha_contrato.month)
         meses_a_deber = max(0, min(meses_transcurridos, int(v['plazo_meses'])))
-        deuda_a_la_fecha = meses_a_deber * mensualidad_pactada
-        saldo_vencido = max(0, deuda_a_la_fecha - total_pagado_historico)
+        deuda_esperada_a_hoy = meses_a_deber * mensualidad_pactada
+        
+        # El saldo vencido solo considera si los ABONOS cubren las MENSUALIDADES programadas
+        saldo_vencido = max(0, deuda_esperada_a_hoy - abonos_mensuales)
         num_atrasos = saldo_vencido / mensualidad_pactada if mensualidad_pactada > 0 else 0
 
         # --- SECCIÓN: INFORMACIÓN GENERAL ---
         st.markdown("### 📋 Resumen del Crédito")
         
-        # --- NUEVA BARRA DE PROGRESO ---
-        st.write(f"**Progreso de Liquidación del Crédito: {int(porcentaje_pagado * 100)}%**")
-        st.progress(porcentaje_pagado)
+        # Barra de progreso considerando el Enganche
+        st.write(f"**Avance Total de Pago (incluye enganche): {int(porcentaje_total * 100)}%**")
+        st.progress(porcentaje_total)
         st.write("") 
 
         c1, c2, c3 = st.columns(3)
         with c1:
             st.write(f"**📍 Ubicación:** {v['ubicacion']}")
             st.write(f"**👤 Cliente:** {v['cliente']}")
-            st.write(f"**📅 Contrato:** {v['fecha']}")
+            st.write(f"**📅 Fecha Contrato:** {v['fecha']}")
         with c2:
-            st.metric("Total Pagado", fmt_moneda(total_pagado_historico))
-            st.write(f"**💵 Crédito Original:** {fmt_moneda(monto_credito)}")
-            st.write(f"**💳 Mensualidad:** {fmt_moneda(mensualidad_pactada)}")
+            st.metric("Total Pagado", fmt_moneda(total_pagado_acumulado))
+            st.write(f"**💰 Costo Total:** {fmt_moneda(precio_total_vta)}")
+            st.write(f"**📥 Enganche Pagado:** {fmt_moneda(enganche_vta)}")
         with c3:
             st.metric("Saldo Vencido", fmt_moneda(saldo_vencido), 
-                      delta=f"{int(num_atrasos)} meses" if num_atrasos >= 1 else None, 
+                      delta=f"{int(num_atrasos)} meses" if num_atrasos >= 1 else "Al día", 
                       delta_color="inverse")
-            st.write(f"**Saldo Restante:** {fmt_moneda(max(0, monto_credito - total_pagado_historico))}")
+            st.write(f"**💳 Mensualidad:** {fmt_moneda(mensualidad_pactada)}")
+            st.write(f"**📉 Saldo Restante:** {fmt_moneda(max(0, precio_total_vta - total_pagado_acumulado))}")
 
         st.divider()
 
         # --- SECCIÓN: TABLA DE AMORTIZACIÓN ---
-        st.subheader("📅 Plan de Pagos")
+        st.subheader("📅 Plan de Pagos Mensuales")
         
         amortizacion = []
-        bolsa_pagos = total_pagado_historico
+        bolsa_pagos = abonos_mensuales # Los abonos mensuales cubren la tabla
 
         for i in range(1, int(v['plazo_meses']) + 1):
             fecha_vencimiento = fecha_contrato + relativedelta(months=i)
@@ -798,6 +805,7 @@ elif menu == "👥 Clientes":
                         df_c = df_c.drop(idx)
                         conn.update(spreadsheet=URL_SHEET, worksheet="clientes", data=df_c)
                         st.error("Cliente eliminado."); st.cache_data.clear(); st.rerun()
+
 
 
 
