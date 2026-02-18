@@ -575,7 +575,7 @@ elif menu == "📍 Catálogo":
                 conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=edited_cat)
                 st.success("Sincronizado."); st.cache_data.clear(); st.rerun()
 
-# --- MÓDULO: DIRECTORIO (EDITOR DE CONTACTOS) ---
+# --- MÓDULO: DIRECTORIO (GESTIÓN CON ID) ---
 elif menu == "📇 Directorio":
     tipo = st.radio("Seleccione Directorio", ["Clientes", "Vendedores"], horizontal=True)
     pestana = "clientes" if tipo == "Clientes" else "vendedores"
@@ -585,7 +585,6 @@ elif menu == "📇 Directorio":
     
     if df_dir.empty:
         st.warning(f"No hay {tipo.lower()} registrados.")
-        # Opción para crear el primer registro si está vacío
         with st.expander(f"➕ Registrar primer {tipo[:-1]}"):
             with st.form("form_nuevo_vacio"):
                 n_nom = st.text_input("Nombre Completo")
@@ -596,23 +595,29 @@ elif menu == "📇 Directorio":
                     conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=nuevo_reg)
                     st.success("Registrado."); st.cache_data.clear(); st.rerun()
     else:
-        # --- BUSCADOR Y EDITOR ---
         st.subheader(f"Gestionar {tipo}")
         
-        opciones_lista = ["-- Seleccionar para editar o agregar nuevo --"] + sorted(df_dir["nombre"].tolist())
-        seleccion = st.selectbox(f"Buscar {tipo[:-1]}", options=opciones_lista)
+        # --- BUSCADOR CON ID ---
+        # Creamos una lista que muestre "ID - Nombre" para facilitar la búsqueda
+        df_dir['display_name'] = df_dir[col_id].astype(str) + " | " + df_dir['nombre']
+        opciones_lista = ["-- Seleccionar para editar o agregar nuevo --"] + sorted(df_dir["display_name"].tolist())
+        seleccion = st.selectbox(f"Buscar {tipo[:-1]} (ID | Nombre)", options=opciones_lista)
         
-        # Si selecciona a alguien, extraemos sus datos actuales
         if seleccion != "-- Seleccionar para editar o agregar nuevo --":
-            datos_actuales = df_dir[df_dir["nombre"] == seleccion].iloc[0]
+            datos_actuales = df_dir[df_dir["display_name"] == seleccion].iloc[0]
             label_boton = "Actualizar Información"
-            msg_exito = "Datos actualizados correctamente."
+            msg_exito = "Datos actualizados."
+            id_actual = datos_actuales[col_id]
         else:
             datos_actuales = {"nombre": "", "telefono": "", "correo": ""}
             label_boton = "Registrar como Nuevo"
             msg_exito = "Nuevo contacto registrado."
+            id_actual = "Auto-generado"
 
         with st.form("form_edicion"):
+            c_id, c_nom = st.columns([1, 3])
+            c_id.text_input("ID", value=str(id_actual), disabled=True) # El ID no se debe editar manualmente
+            
             col_e1, col_e2 = st.columns(2)
             with col_e1:
                 edit_nom = st.text_input("Nombre Completo", value=datos_actuales["nombre"])
@@ -627,41 +632,22 @@ elif menu == "📇 Directorio":
                     st.error("El nombre es obligatorio.")
                 else:
                     if seleccion != "-- Seleccionar para editar o agregar nuevo --":
-                        # LÓGICA DE ACTUALIZACIÓN: Buscamos por el nombre original
-                        df_dir.loc[df_dir["nombre"] == seleccion, ["nombre", "telefono", "correo"]] = [edit_nom, edit_tel, edit_cor]
+                        # Actualizar usando el ID como referencia única
+                        df_dir.loc[df_dir[col_id] == id_actual, ["nombre", "telefono", "correo"]] = [edit_nom, edit_tel, edit_cor]
                     else:
-                        # LÓGICA DE NUEVO REGISTRO
-                        nuevo_id = int(df_dir[col_id].max()) + 1 if not df_dir.empty else 1
+                        # Nuevo registro con ID incremental
+                        nuevo_id = int(df_dir[col_id].max()) + 1
                         nuevo_reg = pd.DataFrame([{col_id: nuevo_id, "nombre": edit_nom, "telefono": edit_tel, "correo": edit_cor}])
                         df_dir = pd.concat([df_dir, nuevo_reg], ignore_index=True)
                     
+                    # Limpiamos la columna auxiliar antes de guardar en Excel
+                    if 'display_name' in df_dir.columns: df_dir = df_dir.drop(columns=['display_name'])
+                    
                     conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=df_dir)
-                    st.success(msg_exito)
-                    st.cache_data.clear()
-                    st.rerun()
+                    st.success(msg_exito); st.cache_data.clear(); st.rerun()
 
         st.divider()
-        st.write(f"### Vista Rápida de {tipo}")
-        st.dataframe(df_dir[["nombre", "telefono", "correo"]], use_container_width=True, hide_index=True)
-
-st.sidebar.write("---")
-st.sidebar.success("Sistema Sincronizado")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        st.write(f"### Lista Completa de {tipo}")
+        # Mostramos la tabla incluyendo el ID al principio
+        columnas_vista = [col_id, "nombre", "telefono", "correo"]
+        st.dataframe(df_dir[columnas_vista], use_container_width=True, hide_index=True)
