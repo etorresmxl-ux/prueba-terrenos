@@ -327,34 +327,78 @@ elif menu == "📑 Catálogo":
         )
         st.caption(f"Mostrando {len(df_mostrar)} ubicaciones.")
 
-# --- MÓDULO: DIRECTORIO ---
+# --- MÓDULO: DIRECTORIO (EDITOR DE CONTACTOS) ---
 elif menu == "📇 Directorio":
     tipo = st.radio("Seleccione Directorio", ["Clientes", "Vendedores"], horizontal=True)
     pestana = "clientes" if tipo == "Clientes" else "vendedores"
     col_id = "id_cliente" if tipo == "Clientes" else "id_vendedor"
+    
     df_dir = cargar_datos(pestana)
-    with st.expander(f"➕ Registrar / Editar {tipo[:-1]}"):
-        with st.form("form_dir", clear_on_submit=True):
-            f_nom = st.text_input("Nombre Completo")
-            f_tel = st.text_input("Teléfono")
-            f_cor = st.text_input("Correo Electrónico")
-            if st.form_submit_button("Guardar"):
-                if f_nom:
-                    if not df_dir.empty and f_nom in df_dir["nombre"].values:
-                        df_dir.loc[df_dir["nombre"] == f_nom, ["telefono", "correo"]] = [f_tel, f_cor]
-                        conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=df_dir)
+    
+    if df_dir.empty:
+        st.warning(f"No hay {tipo.lower()} registrados.")
+        # Opción para crear el primer registro si está vacío
+        with st.expander(f"➕ Registrar primer {tipo[:-1]}"):
+            with st.form("form_nuevo_vacio"):
+                n_nom = st.text_input("Nombre Completo")
+                n_tel = st.text_input("Teléfono")
+                n_cor = st.text_input("Correo")
+                if st.form_submit_button("Guardar"):
+                    nuevo_reg = pd.DataFrame([{col_id: 1, "nombre": n_nom, "telefono": n_tel, "correo": n_cor}])
+                    conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=nuevo_reg)
+                    st.success("Registrado."); st.cache_data.clear(); st.rerun()
+    else:
+        # --- BUSCADOR Y EDITOR ---
+        st.subheader(f"Gestionar {tipo}")
+        
+        opciones_lista = ["-- Seleccionar para editar o agregar nuevo --"] + sorted(df_dir["nombre"].tolist())
+        seleccion = st.selectbox(f"Buscar {tipo[:-1]}", options=opciones_lista)
+        
+        # Si selecciona a alguien, extraemos sus datos actuales
+        if seleccion != "-- Seleccionar para editar o agregar nuevo --":
+            datos_actuales = df_dir[df_dir["nombre"] == seleccion].iloc[0]
+            label_boton = "Actualizar Información"
+            msg_exito = "Datos actualizados correctamente."
+        else:
+            datos_actuales = {"nombre": "", "telefono": "", "correo": ""}
+            label_boton = "Registrar como Nuevo"
+            msg_exito = "Nuevo contacto registrado."
+
+        with st.form("form_edicion"):
+            col_e1, col_e2 = st.columns(2)
+            with col_e1:
+                edit_nom = st.text_input("Nombre Completo", value=datos_actuales["nombre"])
+                edit_tel = st.text_input("Teléfono", value=datos_actuales["telefono"])
+            with col_e2:
+                edit_cor = st.text_input("Correo Electrónico", value=datos_actuales["correo"])
+                st.write("---")
+                enviar = st.form_submit_button(label_boton, type="primary")
+
+            if enviar:
+                if not edit_nom:
+                    st.error("El nombre es obligatorio.")
+                else:
+                    if seleccion != "-- Seleccionar para editar o agregar nuevo --":
+                        # LÓGICA DE ACTUALIZACIÓN: Buscamos por el nombre original
+                        df_dir.loc[df_dir["nombre"] == seleccion, ["nombre", "telefono", "correo"]] = [edit_nom, edit_tel, edit_cor]
                     else:
-                        nuevo_id = int(df_dir[col_id].max()) + 1 if (not df_dir.empty and col_id in df_dir.columns) else 1
-                        nuevo_reg = pd.DataFrame([{col_id: nuevo_id, "nombre": f_nom, "telefono": f_tel, "correo": f_cor}])
-                        conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=pd.concat([df_dir, nuevo_reg], ignore_index=True))
-                    st.success("Guardado."); st.cache_data.clear(); st.rerun()
-                else: st.error("Nombre obligatorio")
-    st.write(f"### Lista de {tipo}")
-    if not df_dir.empty:
+                        # LÓGICA DE NUEVO REGISTRO
+                        nuevo_id = int(df_dir[col_id].max()) + 1 if not df_dir.empty else 1
+                        nuevo_reg = pd.DataFrame([{col_id: nuevo_id, "nombre": edit_nom, "telefono": edit_tel, "correo": edit_cor}])
+                        df_dir = pd.concat([df_dir, nuevo_reg], ignore_index=True)
+                    
+                    conn.update(spreadsheet=URL_SHEET, worksheet=pestana, data=df_dir)
+                    st.success(msg_exito)
+                    st.cache_data.clear()
+                    st.rerun()
+
+        st.divider()
+        st.write(f"### Vista Rápida de {tipo}")
         st.dataframe(df_dir[["nombre", "telefono", "correo"]], use_container_width=True, hide_index=True)
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
