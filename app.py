@@ -102,39 +102,6 @@ if menu == "🏠 Inicio":
                          column_config={"Deuda Vencida": st.column_config.NumberColumn(format="$ %.2f"), "Saldo Total": st.column_config.NumberColumn(format="$ %.2f")})
 
 # ==========================================
-# 📍 MÓDULO: CATÁLOGO
-# ==========================================
-elif menu == "📍 Catálogo":
-    tab1, tab2 = st.tabs(["📋 Inventario", "🏗️ Gestión"])
-    df_cat = cargar_datos("ubicaciones")
-
-    with tab1:
-        if not df_cat.empty:
-            solo_disp = st.toggle("Solo Disponibles", value=True)
-            df_m = df_cat.copy()
-            if solo_disp: df_m = df_m[df_m["estatus"] == "Disponible"]
-            
-            def style_cat(val):
-                return 'background-color: #09AB3B; color: white; font-weight: bold' if val == 'Disponible' else 'color: #808495'
-
-            st.dataframe(df_m[["ubicacion", "fase", "precio", "estatus"]].style.applymap(style_cat, subset=['estatus']),
-                         use_container_width=True, hide_index=True,
-                         column_config={"precio": st.column_config.NumberColumn(format="$ %.2f"), "fase": "Fase"})
-    
-    with tab2:
-        with st.expander("➕ Nuevo Lote"):
-            with st.form("n_lote"):
-                c1, c2 = st.columns(2)
-                u = c1.text_input("Lote")
-                f = c1.number_input("Fase", min_value=1, step=1)
-                p = c2.number_input("Precio ($)", min_value=0.0)
-                e = c2.selectbox("Estatus", ["Disponible", "Vendido", "Apartado"])
-                if st.form_submit_button("Guardar"):
-                    nuevo = pd.DataFrame([{"id_ubi": len(df_cat)+1, "ubicacion": u, "fase": f, "precio": p, "estatus": e}])
-                    conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=pd.concat([df_cat, nuevo]))
-                    st.cache_data.clear(); st.rerun()
-
-# ==========================================
 # 📝 MÓDULO: VENTAS
 # ==========================================
 elif menu == "📝 Ventas":
@@ -169,131 +136,37 @@ elif menu == "📝 Ventas":
                 st.cache_data.clear(); st.rerun()
 
 # ==========================================
-# 📊 MÓDULO: DETALLE DE CRÉDITO
+# 📍 MÓDULO: UBICACIONES
 # ==========================================
-elif menu == "📊 Detalle de Crédito":
-    st.header("📊 Expediente Digital de Crédito")
-    
-    # 1. Carga de datos
-    df_v = cargar_datos("ventas")
-    df_p = cargar_datos("pagos")
-    
-    if df_v.empty:
-        st.warning("No se encontraron contratos registrados en el sistema.")
-    else:
-        # Filtro de seguridad para estatus de contrato
-        if "estatus_pago" not in df_v.columns: 
-            df_v["estatus_pago"] = "Activo"
-            
-        col_sel1, col_sel2 = st.columns([2, 1])
-        with col_sel1:
-            # Selector de contrato con Ubicación y Cliente
-            df_v['selector'] = df_v['ubicacion'] + " | " + df_v['cliente']
-            contrato_sel = st.selectbox("Seleccione un contrato para auditar:", options=df_v['selector'].tolist())
-        
-        # Extraer datos del contrato seleccionado
-        d = df_v[df_v['selector'] == contrato_sel].iloc[0]
-        ubicacion_act = d['ubicacion']
-        
-        # 2. Cálculos Financieros
-        # Pagos realizados (Abonos)
-        total_pagado = df_p[df_p['ubicacion'] == ubicacion_act]['monto'].sum() if not df_p.empty else 0.0
-        
-        # Monto financiado (Precio - Enganche)
-        monto_financiado = float(d['precio_total']) - float(d['enganche'])
-        saldo_pendiente = monto_financiado - total_pagado
-        progreso_pago = min(total_pagado / monto_financiado, 1.0) if monto_financiado > 0 else 0
-        
-        # 3. Lógica de Tiempo y Estatus (Fecha de Compra)
-        hoy = datetime.now()
-        try:
-            fecha_contrato = datetime.strptime(str(d['fecha']), '%Y-%m-%d')
-        except:
-            fecha_contrato = hoy
-            
-        # Meses que ya deberían estar cubiertos según el calendario
-        diff = relativedelta(hoy, fecha_contrato)
-        meses_cumplidos = diff.years * 12 + diff.months
-        
-        monto_que_deberia_llevar = meses_cumplidos * float(d['mensualidad'])
-        deuda_vencida = monto_que_deberia_llevar - total_pagado
-        
-        # Clasificación Convencional
-        if deuda_vencida > 1.0:
-            # Calcular días exactos de mora desde el último vencimiento
-            ultimo_vencimiento = fecha_contrato + relativedelta(months=meses_cumplidos)
-            dias_mora = (hoy - ultimo_vencimiento).days
-            estatus_visual = "🔴 ATRASO"
-            color_resalte = "#FF4B4B"
-        else:
-            estatus_visual = "🟢 AL CORRIENTE"
-            color_resalte = "#09AB3B"
-            deuda_vencida = 0.0
-            dias_mora = 0
+elif menu == "📍 Ubicaciones":
+    tab1, tab2 = st.tabs(["📋 Inventario", "🏗️ Gestión"])
+    df_cat = cargar_datos("ubicaciones")
 
-        # --- INTERFAZ VISUAL ---
-        
-        # Fila de Métricas Principales
-        st.divider()
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Saldo Restante", fmt_moneda(saldo_pendiente))
-        m2.metric("Total Abonado", fmt_moneda(total_pagado))
-        m3.metric("Progreso del Crédito", f"{int(progreso_pago*100)}%")
-        st.progress(progreso_pago)
-        
-        # Fila de Estatus y Mora
-        st.write("### Situación de Pagos")
-        c_est, c_venc, c_dias = st.columns(3)
-        
-        with c_est:
-            st.markdown(f"<p style='margin-bottom:-5px; font-size:14px; opacity:0.8;'>Estatus actual:</p><h2 style='color:{color_resalte}; margin-top:0;'>{estatus_visual}</h2>", unsafe_allow_html=True)
+    with tab1:
+        if not df_cat.empty:
+            solo_disp = st.toggle("Solo Disponibles", value=True)
+            df_m = df_cat.copy()
+            if solo_disp: df_m = df_m[df_m["estatus"] == "Disponible"]
             
-        c_venc.metric("Monto Vencido", fmt_moneda(deuda_vencida))
-        c_dias.metric("Días de Mora", f"{dias_mora} días")
+            def style_cat(val):
+                return 'background-color: #09AB3B; color: white; font-weight: bold' if val == 'Disponible' else 'color: #808495'
 
-        # 4. Tabla de Amortización Dinámica
-        st.write("---")
-        st.subheader("📅 Proyección de Pagos y Cumplimiento")
-        
-        plan_pagos = []
-        fecha_pago_aux = fecha_contrato
-        saldo_por_aplicar = total_pagado
-        cuota_mensual = float(d['mensualidad'])
-        
-        for mes in range(1, int(d['plazo_meses']) + 1):
-            fecha_pago_aux += relativedelta(months=1)
-            
-            # Determinar estado del mes
-            if saldo_por_aplicar >= (cuota_mensual - 0.1): # Tolerancia de centavos
-                estado_mes = "✅ Pagado"
-                saldo_por_aplicar -= cuota_mensual
-            elif saldo_por_aplicar > 0:
-                estado_mes = f"🔶 Parcial ({fmt_moneda(saldo_por_aplicar)})"
-                saldo_por_aplicar = 0
-            else:
-                estado_mes = "⏳ Pendiente"
-            
-            plan_pagos.append({
-                "No. Mes": mes,
-                "Fecha Vencimiento": fecha_pago_aux.strftime('%d/%m/%Y'),
-                "Monto Cuota": fmt_moneda(cuota_mensual),
-                "Estatus": estado_mes
-            })
-            
-        st.dataframe(
-            pd.DataFrame(plan_pagos),
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "No. Mes": st.column_config.NumberColumn(width="small"),
-                "Estatus": st.column_config.TextColumn("Estado del Mes")
-            }
-        )
-        
-        # Notas del contrato
-        if pd.notna(d['comentarios']) and d['comentarios'] != "":
-            with st.expander("📌 Ver Notas del Contrato"):
-                st.write(d['comentarios'])
+            st.dataframe(df_m[["ubicacion", "fase", "precio", "estatus"]].style.applymap(style_cat, subset=['estatus']),
+                         use_container_width=True, hide_index=True,
+                         column_config={"precio": st.column_config.NumberColumn(format="$ %.2f"), "fase": "Fase"})
+    
+    with tab2:
+        with st.expander("➕ Nuevo Lote"):
+            with st.form("n_lote"):
+                c1, c2 = st.columns(2)
+                u = c1.text_input("Lote")
+                f = c1.number_input("Fase", min_value=1, step=1)
+                p = c2.number_input("Precio ($)", min_value=0.0)
+                e = c2.selectbox("Estatus", ["Disponible", "Vendido", "Apartado"])
+                if st.form_submit_button("Guardar"):
+                    nuevo = pd.DataFrame([{"id_ubi": len(df_cat)+1, "ubicacion": u, "fase": f, "precio": p, "estatus": e}])
+                    conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=pd.concat([df_cat, nuevo]))
+                    st.cache_data.clear(); st.rerun()
 
 # ==========================================
 # 💰 MÓDULO: COBRANZA
@@ -724,4 +597,5 @@ elif menu == "📇 Directorio":
             st.table(df_vd[["id_vendedor", "nombre", "telefono", "comision_base", "estatus"]])
         else:
             st.info("No hay vendedores registrados en el equipo.")
+
 
