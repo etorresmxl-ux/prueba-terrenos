@@ -333,23 +333,95 @@ elif menu == "📊 Detalle de Crédito":
         
         st.dataframe(pd.DataFrame(tabla), use_container_width=True, hide_index=True, height=300)
 
-# --- MÓDULO: COBRANZA ---
+# --- MÓDULO: COBRANZA (REGISTRO Y EDICIÓN CON FOLIO) ---
 elif menu == "💰 Cobranza":
-    st.subheader("Registro de Abonos")
+    tab1, tab2 = st.tabs(["💵 Registrar Abono", "📜 Historial y Edición"])
+    
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
-    if not df_v.empty:
-        if "estatus_pago" not in df_v.columns: df_v["estatus_pago"] = "Activo"
-        df_v['display'] = df_v['ubicacion'] + " | " + df_v['cliente']
-        lista_cobro = df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]['display'].tolist()
-        c_sel = st.selectbox("Contrato", options=lista_cobro)
-        dv = df_v[df_v['display'] == c_sel].iloc[0]
-        with st.form("pago_form"):
-            monto_p = st.number_input("Monto ($)", value=float(dv['mensualidad']))
-            if st.form_submit_button("Registrar Abono"):
-                nuevo_p = pd.DataFrame([{"fecha": datetime.now().strftime('%Y-%m-%d'), "ubicacion": dv['ubicacion'], "cliente": dv['cliente'], "monto": round(monto_p, 2)}])
-                conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=pd.concat([df_p, nuevo_p], ignore_index=True))
-                st.success("Pago registrado"); st.cache_data.clear(); st.rerun()
+
+    # --- PESTAÑA 1: REGISTRO DE ABONOS ---
+    with tab1:
+        st.subheader("Nuevo Ingreso")
+        if not df_v.empty:
+            # Solo mostrar contratos activos para cobrar
+            df_v['display'] = df_v['ubicacion'] + " | " + df_v['cliente']
+            lista_cobro = df_v[df_v["estatus_pago"].fillna("Activo") == "Activo"]['display'].tolist()
+            
+            c_sel = st.selectbox("Seleccione el Contrato", options=lista_cobro, key="cob_sel")
+            dv = df_v[df_v['display'] == c_sel].iloc[0]
+            
+            with st.form("pago_form", clear_on_submit=True):
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    monto_p = st.number_input("Monto Recibido ($)", value=float(dv['mensualidad']), min_value=0.0)
+                    f_pago = st.date_input("Fecha de Recibo", value=datetime.now())
+                with col_p2:
+                    folio_p = st.text_input("Folio de Comprobante (Físico)", placeholder="Ej. A-105")
+                    st.caption("Asocie este registro con su recibo de papel.")
+                
+                if st.form_submit_button("Confirmar y Guardar Abono", type="primary"):
+                    if folio_p:
+                        nuevo_p = pd.DataFrame([{
+                            "fecha": f_pago.strftime('%Y-%m-%d'),
+                            "ubicacion": dv['ubicacion'],
+                            "cliente": dv['cliente'],
+                            "monto": round(monto_p, 2),
+                            "folio": folio_p.upper()
+                        }])
+                        conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=pd.concat([df_p, nuevo_p], ignore_index=True))
+                        st.success(f"Abono registrado con Folio: {folio_p.upper()}")
+                        st.cache_data.clear()
+                        st.rerun()
+                    else:
+                        st.error("El número de Folio es obligatorio para el control interno.")
+        else:
+            st.warning("No hay contratos activos para registrar cobros.")
+
+    # --- PESTAÑA 2: HISTORIAL Y EDICIÓN ---
+    with tab2:
+        st.subheader("Reporte de Ingresos")
+        if not df_p.empty:
+            # Buscador por Folio o Cliente
+            busqueda = st.text_input("🔍 Buscar por Folio o Cliente").upper()
+            df_p_vista = df_p.copy()
+            
+            if busqueda:
+                df_p_vista = df_p_vista[
+                    df_p_vista['folio'].astype(str).str.contains(busqueda) | 
+                    df_p_vista['cliente'].str.upper().str.contains(busqueda)
+                ]
+
+            st.write("Seleccione un registro de la tabla para modificarlo:")
+            
+            # Formatear montos para la vista
+            df_p_vista = df_p_vista.sort_index(ascending=False) # Ver los más recientes arriba
+            
+            # Editor de tabla (Data Editor)
+            # El usuario puede cambiar los datos directamente en la tabla
+            edited_df = st.data_editor(
+                df_p_vista,
+                use_container_width=True,
+                hide_index=False, # Mostramos el índice para rastrear el cambio
+                column_config={
+                    "monto": st.column_config.NumberColumn(format="$ %.2f"),
+                    "fecha": st.column_config.DateColumn(),
+                    "folio": st.column_config.TextColumn(help="Haga doble clic para editar")
+                }
+            )
+
+            if st.button("💾 Guardar Cambios en Historial"):
+                # Actualizamos la base original con los datos editados
+                df_p.update(edited_df)
+                conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
+                st.success("Historial actualizado correctamente.")
+                st.cache_data.clear()
+                st.rerun()
+                
+            st.divider()
+            st.metric("Total Recaudado en Selección", fmt_moneda(df_p_vista["monto"].sum()))
+        else:
+            st.info("No hay registros de pagos previos.")
 
 # --- MÓDULO: GASTOS DE OPERACIÓN ---
 elif menu == "💸 Gastos":
@@ -538,6 +610,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
