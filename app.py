@@ -335,6 +335,80 @@ elif menu == "💰 Cobranza":
                 conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=pd.concat([df_p, nuevo_p], ignore_index=True))
                 st.success("Pago registrado"); st.cache_data.clear(); st.rerun()
 
+# --- MÓDULO: GASTOS DE OPERACIÓN ---
+elif menu == "💸 Gastos":
+    st.subheader("Registro de Gastos Operativos")
+    df_g = cargar_datos("gastos")
+    
+    # Formulario de Registro
+    with st.expander("➕ Registrar Nuevo Gasto", expanded=True):
+        with st.form("form_gastos", clear_on_submit=True):
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                g_fecha = st.date_input("Fecha del Gasto", value=datetime.now())
+                g_cat = st.selectbox("Categoría", [
+                    "Marketing / Publicidad", 
+                    "Administrativo", 
+                    "Comisiones Externas", 
+                    "Mantenimiento / Limpieza", 
+                    "Servicios (Luz, Agua, Internet)",
+                    "Impuestos / Legal",
+                    "Otros"
+                ])
+                g_monto = st.number_input("Monto del Gasto ($)", min_value=0.0, step=100.0)
+            with col_g2:
+                g_desc = st.text_input("Descripción / Concepto (ej. Pago Facebook Ads)")
+                g_metodo = st.selectbox("Método de Pago", ["Transferencia", "Efectivo", "Tarjeta", "Cheque"])
+                st.write("---")
+                btn_gasto = st.form_submit_button("Guardar Gasto", type="primary")
+
+            if btn_gasto:
+                if g_monto > 0 and g_desc:
+                    nuevo_id_g = int(df_g["id_gasto"].max()) + 1 if (not df_g.empty and "id_gasto" in df_g.columns) else 1
+                    nuevo_g = pd.DataFrame([{
+                        "id_gasto": nuevo_id_g,
+                        "fecha": g_fecha.strftime('%Y-%m-%d'),
+                        "categoria": g_cat,
+                        "descripcion": g_desc,
+                        "monto": round(g_monto, 2),
+                        "metodo_pago": g_metodo
+                    }])
+                    conn.update(spreadsheet=URL_SHEET, worksheet="gastos", data=pd.concat([df_g, nuevo_g], ignore_index=True))
+                    st.success("Gasto registrado correctamente.")
+                    st.cache_data.clear()
+                    st.rerun()
+                else:
+                    st.error("Por favor ingresa un monto y descripción.")
+
+    st.divider()
+    
+    # Visualización y Resumen
+    st.subheader("Historial de Gastos")
+    if not df_g.empty:
+        # Filtros rápidos
+        c_f1, c_f2 = st.columns(2)
+        with c_f1:
+            filtro_cat = st.multiselect("Filtrar por Categoría", options=df_g["categoria"].unique())
+        
+        df_g_filtrado = df_g.copy()
+        if filtro_cat:
+            df_g_filtrado = df_g_filtrado[df_g_filtrado["categoria"].isin(filtro_cat)]
+        
+        # Métricas de gastos
+        total_g = df_g_filtrado["monto"].sum()
+        st.metric("Total Gastado (Selección)", fmt_moneda(total_g))
+        
+        st.dataframe(
+            df_g_filtrado.sort_values(by="fecha", ascending=False),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "monto": st.column_config.NumberColumn(format="$ %.2f")
+            }
+        )
+    else:
+        st.info("No hay gastos registrados aún.")
+
 # --- MÓDULO: COMISIONES ---
 elif menu == "💸 Comisiones":
     st.subheader("Gestión de Comisiones")
@@ -448,6 +522,7 @@ elif menu == "📇 Directorio":
 
 st.sidebar.write("---")
 st.sidebar.success("Sistema Sincronizado")
+
 
 
 
