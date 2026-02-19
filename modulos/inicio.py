@@ -24,7 +24,7 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
 
     st.divider()
     
-    # --- MONITOR DE CARTERA CON ENLACES INTEGRADOS ---
+    # --- MONITOR DE CARTERA ---
     st.subheader("🚩 Monitor de Cartera")
     if not df_v.empty:
         monitor = []
@@ -42,9 +42,9 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
             deuda_vencida = max(0.0, (m_transcurridos * mensualidad) - total_pagado)
             m_atraso = deuda_vencida / mensualidad if mensualidad > 0 else 0
             
-            # Inicializamos variables de texto y link
-            col_whatsapp = ""
-            col_email = ""
+            # Variables para las celdas combinadas
+            col_wa_display = ""
+            col_mail_display = ""
 
             if deuda_vencida > 1.0:
                 estatus = "🔴 ATRASO"
@@ -52,47 +52,44 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
                 f_vence = f_con + relativedelta(months=int(cuotas_ok) + 1)
                 dias_a = (hoy - f_vence).days if hoy > f_vence else 0
                 
-                # Acciones para morosidad >= 3 meses
                 if m_atraso >= 3:
                     c_info = df_cl[df_cl['nombre'] == v['cliente']]
                     if not c_info.empty:
                         correo_real = str(c_info.iloc[0].get('correo', ''))
                         tel_real = str(c_info.iloc[0].get('telefono', ''))
                         
-                        # Limpiar teléfono para el protocolo wa.me
                         tel_link = tel_real.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-                        
-                        # Preparar mensaje
                         msj = f"Hola {v['cliente']}, le contactamos de Zona Valle respecto a su lote en {v['ubicacion']}..."
                         msj_enc = urllib.parse.quote(msj)
                         
-                        # Construcción de los enlaces (esto es lo que se verá en la celda)
+                        # CREACIÓN DE CELDA COMBINADA (LINK + TEXTO)
                         if tel_real:
-                            col_whatsapp = f"https://wa.me/{tel_link}?text={msj_enc}"
+                            # Formato: [Icono](URL) Numero
+                            col_wa_display = f"https://wa.me/{tel_link}?text={msj_enc}"
                         if correo_real:
-                            col_email = f"mailto:{correo_real}?subject=Invitación Especial&body={msj_enc}"
+                            # Formato: [Icono](URL) Correo
+                            col_mail_display = f"mailto:{correo_real}?subject=Invitación Especial&body={msj_enc}"
             else:
                 estatus = "🟢 AL CORRIENTE"
                 dias_a = 0
+                tel_real = ""
+                correo_real = ""
 
-            # Guardamos los datos. Si no hay link, la celda dirá el dato pero no será link (o estará vacía)
             monitor.append({
                 "Ubicación": v['ubicacion'], 
                 "Cliente": v['cliente'], 
                 "Estatus": estatus, 
                 "Días de Atraso": dias_a,
                 "Deuda Vencida": deuda_vencida,
-                "WhatsApp": col_whatsapp, # Aquí va la URL completa
-                "Email": col_email,        # Aquí va la URL completa
-                "_tel_display": tel_real if 'tel_real' in locals() else "", # Guardamos texto plano para el display
-                "_mail_display": correo_real if 'correo_real' in locals() else ""
+                "WhatsApp": col_wa_display,
+                "Tel_Txt": tel_real if m_atraso >= 3 else "",
+                "Email": col_mail_display,
+                "Mail_Txt": correo_real if m_atraso >= 3 else ""
             })
-            # Limpiar variables locales para la siguiente iteración
-            tel_real = ""; correo_real = ""
         
         df_mon = pd.DataFrame(monitor)
 
-        # --- RENDERIZADO CON LINKS PERSONALIZADOS ---
+        # RENDERIZADO CON CONFIGURACIÓN DE LINK PERSONALIZADO
         st.dataframe(
             df_mon.style.format({
                 "Deuda Vencida": "$ {:,.2f}",
@@ -103,14 +100,14 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
             column_config={
                 "WhatsApp": st.column_config.LinkColumn(
                     "💬 WhatsApp", 
-                    display_text=r"📲 (.*)", # Expresión regular para mostrar el número si existe el link
-                    help="Haga clic para enviar mensaje"
+                    display_text=r"📲 Enviar a: (.*)", # Esto es un truco visual para que parezca texto al lado
                 ),
+                "Tel_Txt": st.column_config.TextColumn("📞 Número"),
                 "Email": st.column_config.LinkColumn(
                     "📧 Correo", 
-                    display_text=r"mailto:(.*)\?.*", # Muestra solo el correo quitando el resto del link mailto
-                    help="Haga clic para enviar correo"
+                    display_text="📩 Redactar para cliente"
                 ),
+                "Mail_Txt": st.column_config.TextColumn("📩 Dirección de Correo"),
                 "Días de Atraso": st.column_config.NumberColumn(format="%d días")
             }
         )
