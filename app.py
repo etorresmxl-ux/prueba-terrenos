@@ -3,6 +3,10 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+
+# --- IMPORTACIONES AL INICIO DEL ARCHIVO ---
+
+from modulos.ubicaciones import render_ubicaciones
 from modulos.clientes import render_clientes
 
 # 1. CONFIGURACIÓN DE LA PÁGINA
@@ -586,122 +590,10 @@ elif menu == "💸 Gastos":
             conn.update(spreadsheet=URL_SHEET, worksheet="gastos", data=pd.concat([df_g, nuevo]))
             st.success("Gasto guardado"); st.cache_data.clear(); st.rerun()
 
-# ==========================================
-# 📍 MÓDULO: UBICACIONES
-# ==========================================
-elif menu == "📍 Ubicaciones":
-    st.title("📍 Control de Inventario")
-    
-    # Cargar base de datos
-    df_u = cargar_datos("ubicaciones")
+if menu == "📍 Ubicaciones":
+    df_ubicaciones = cargar_datos("ubicaciones")
+    render_ubicaciones(df_ubicaciones, conn, URL_SHEET, cargar_datos)
 
-    # --- FILTRO TIPO SWITCH (Activo por defecto) ---
-    st.write("### 🔍 Vista de Inventario")
-    ocultar_vendidos = st.toggle("Ocultar Lotes Vendidos", value=True)
-
-    df_mostrar = df_u.copy()
-    if ocultar_vendidos:
-        df_mostrar = df_u[df_u["estatus"] == "Disponible"]
-
-    # --- CAMBIO AQUÍ: Seleccionamos solo las columnas que queremos ver ---
-    # Ocultamos 'id_lote' pero dejamos las informativas
-    columnas_visibles = ["ubicacion", "fase", "manzana", "lote", "precio", "estatus"]
-    # Solo filtramos si las columnas existen en el DataFrame
-    cols_existentes = [c for c in columnas_visibles if c in df_mostrar.columns]
-    
-    st.dataframe(df_mostrar[cols_existentes], use_container_width=True, hide_index=True)
-
-    tab_nueva, tab_editar = st.tabs(["✨ Agregar Ubicación", "✏️ Editar Registro"])
-
-    # ---------------------------------------------------------
-    # PESTAÑA 1: AGREGAR NUEVA UBICACIÓN
-    # ---------------------------------------------------------
-    with tab_nueva:
-        with st.form("form_nueva_ubi"):
-            st.subheader("Registrar Nuevo Lote")
-            c1, c2 = st.columns(2)
-            
-            f_manzana = c1.number_input("🍎 Manzana", min_value=1, step=1, value=1)
-            f_lote = c2.number_input("🔢 Lote", min_value=1, step=1, value=1)
-            
-            f_fase = c1.text_input("🏗️ Fase / Etapa", placeholder="Ej: Fase 1")
-            f_pre = c2.number_input("💵 Precio de Lista ($)", min_value=0.0, step=1000.0)
-            
-            # Generación de ID automática (invisible para el usuario en la tabla)
-            nuevo_id_sugerido = 1
-            if not df_u.empty and "id_lote" in df_u.columns:
-                try:
-                    nuevo_id_sugerido = int(float(df_u["id_lote"].max())) + 1
-                except:
-                    nuevo_id_sugerido = len(df_u) + 1
-            
-            nombre_gen = f"M{str(f_manzana).zfill(2)}-L{str(f_lote).zfill(2)}"
-            
-            st.info(f"💡 Ubicación a registrar: **{nombre_gen}** (ID interno: {nuevo_id_sugerido})")
-
-            if st.form_submit_button("➕ AGREGAR AL INVENTARIO"):
-                nueva_fila = pd.DataFrame([{
-                    "id_lote": nuevo_id_sugerido,
-                    "ubicacion": nombre_gen,
-                    "manzana": f_manzana,
-                    "lote": f_lote,
-                    "fase": f_fase,
-                    "precio": f_pre,
-                    "estatus": "Disponible"
-                }])
-                
-                df_u = pd.concat([df_u, nueva_fila], ignore_index=True)
-                conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                
-                st.success(f"✅ Lote {nombre_gen} agregado correctamente.")
-                st.cache_data.clear()
-                st.rerun()
-
-    # ---------------------------------------------------------
-    # PESTAÑA 2: EDITAR REGISTROS
-    # ---------------------------------------------------------
-    with tab_editar:
-        if df_u.empty:
-            st.info("No hay ubicaciones para editar.")
-        else:
-            # En el selector de edición mantenemos el ID para que tú como admin sepas cuál es
-            ubi_lista = (df_u["id_lote"].astype(str) + " | " + df_u["ubicacion"]).tolist()
-            u_sel = st.selectbox("Seleccione el lote a modificar:", ["--"] + ubi_lista)
-            
-            if u_sel != "--":
-                id_u_sel = int(float(u_sel.split(" | ")[0]))
-                idx = df_u[df_u["id_lote"].astype(float).astype(int) == id_u_sel].index[0]
-                row = df_u.loc[idx]
-                
-                with st.form("form_edit_ubi"):
-                    st.write(f"✏️ Editando: **{row['ubicacion']}**")
-                    ce1, ce2 = st.columns(2)
-                    
-                    e_pre = ce1.number_input("Precio Actualizado ($)", min_value=0.0, value=float(row.get("precio", 0.0)))
-                    e_est = ce2.selectbox("Estatus", ["Disponible", "Vendido", "Apartado", "Bloqueado"], 
-                                         index=["Disponible", "Vendido", "Apartado", "Bloqueado"].index(row["estatus"]))
-                    
-                    e_fas = ce1.text_input("Fase", value=str(row.get("fase", "")))
-                    
-                    col_b1, col_b2 = st.columns(2)
-                    if col_b1.form_submit_button("💾 GUARDAR CAMBIOS"):
-                        df_u.at[idx, "precio"] = e_pre
-                        df_u.at[idx, "estatus"] = e_est
-                        df_u.at[idx, "fase"] = e_fas
-                        
-                        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                        st.success("Cambios guardados con éxito."); st.cache_data.clear(); st.rerun()
-                        
-                    if col_b2.form_submit_button("🗑️ ELIMINAR"):
-                        df_u = df_u.drop(idx)
-                        conn.update(spreadsheet=URL_SHEET, worksheet="ubicaciones", data=df_u)
-                        st.error("Ubicación eliminada."); st.cache_data.clear(); st.rerun()
-
-# ==========================================
-# 👥 MÓDULO: CLIENTES
-# ==========================================
-if menu == "👥 Clientes":
-    # 1. Cargamos los datos necesarios
+elif menu == "👥 Clientes":
     df_clientes = cargar_datos("clientes")
-    # 2. Llamamos a la función del archivo externo
     render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
