@@ -24,11 +24,8 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
     
     # Suma de abonos registrados en la tabla de pagos
     abonos_mensuales = df_p[df_p["ubicacion"] == ubi_sel]["monto"].sum() if not df_p.empty else 0
-    
-    # TOTAL PAGADO (Enganche + Abonos)
     total_pagado_acumulado = enganche_vta + abonos_mensuales
     
-    # Cálculo de avance (Sobre el costo total)
     porcentaje_total = (total_pagado_acumulado / precio_total_vta) if precio_total_vta > 0 else 0
     porcentaje_total = min(1.0, porcentaje_total)
 
@@ -55,7 +52,7 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
     with c1:
         st.write(f"**📍 Ubicación:** {v['ubicacion']}")
         st.write(f"**👤 Cliente:** {v['cliente']}")
-        st.write(f"**📅 Contrato:** {v['fecha']}")
+        st.write(f"**📅 Contrato:** {fecha_contrato.strftime('%d-%b-%Y')}")
     with c2:
         st.metric("Total Pagado", fmt_moneda(total_pagado_acumulado))
         st.write(f"**💰 Costo Total:** {fmt_moneda(precio_total_vta)}")
@@ -68,41 +65,62 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
 
     st.divider()
 
-        # --- TABLA DE AMORTIZACIÓN CON DISEÑO PROFESIONAL ---
-        st.subheader("📅 Cronograma de Pagos")
+    # --- GENERACIÓN DE LA TABLA DE AMORTIZACIÓN ---
+    st.subheader("📅 Cronograma de Pagos")
+    
+    datos_amort = []
+    saldo_insoluto = monto_a_financiar
+    acumulado_pagado = abonos_mensuales
 
-        # 1. Renombrar columnas para que se vean bien (Nombre Propio)
-        # Ajusta los nombres de la izquierda según cómo se llamen originalmente en tu código
-        nuevos_nombres_amort = {
-            "n_cuota": "No. Cuota",
-            "fecha_pago": "Fecha de Pago",
-            "monto_cuota": "Monto de Cuota",
-            "estado": "Estatus",
-            "saldo_pendiente": "Saldo Restante"
-        }
+    for i in range(1, int(v['plazo_meses']) + 1):
+        fecha_pago = fecha_contrato + relativedelta(months=i)
+        
+        # Determinar estatus de la cuota
+        if acumulado_pagado >= mensualidad_pactada:
+            estatus = "✅ Pagado"
+            acumulado_pagado -= mensualidad_pactada
+        elif acumulado_pagado > 0:
+            estatus = "⚠️ Parcial"
+            acumulado_pagado = 0
+        else:
+            estatus = "⏳ Pendiente"
+            
+        saldo_insoluto = max(0, saldo_insoluto - mensualidad_pactada)
+        
+        datos_amort.append({
+            "n_cuota": i,
+            "fecha_pago": fecha_pago,
+            "monto_cuota": mensualidad_pactada,
+            "estado": estatus,
+            "saldo_pendiente": saldo_insoluto
+        })
 
-        # Aplicamos el filtro de columnas y el renombrado
-        df_visual = df_amort.rename(columns=nuevos_nombres_amort)
+    df_amort = pd.DataFrame(datos_amort)
 
-        # 2. Asegurar que la fecha sea datetime para el formato
-        if "Fecha de Pago" in df_visual.columns:
-            df_visual["Fecha de Pago"] = pd.to_datetime(df_visual["Fecha de Pago"])
+    # --- DISEÑO PROFESIONAL DE LA TABLA ---
+    nuevos_nombres_amort = {
+        "n_cuota": "No. Cuota",
+        "fecha_pago": "Fecha de Pago",
+        "monto_cuota": "Monto de Cuota",
+        "estado": "Estatus",
+        "saldo_pendiente": "Saldo Restante"
+    }
 
-        # 3. Aplicar Estilos y Formatos
-        df_amort_estilizado = df_visual.style.format({
-            "Fecha de Pago": lambda t: t.strftime('%d-%b-%Y'),
-            "Monto de Cuota": "$ {:,.2f}",
-            "Saldo Restante": "$ {:,.2f}"
-        }).set_table_styles([
-            # Centrar encabezados y darles un toque visual
-            {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6'), ('color', '#1f1f1f')]},
-            # Opcional: Centrar el contenido de las celdas
-            {'selector': 'td', 'props': [('text-align', 'center')]}
-        ])
+    df_visual = df_amort.rename(columns=nuevos_nombres_amort)
 
-        # 4. Renderizar
-        st.dataframe(
-            df_amort_estilizado,
-            use_container_width=True,
-            hide_index=True
-        )
+    # Aplicar Estilos y Formatos
+    df_amort_estilizado = df_visual.style.format({
+        "Fecha de Pago": lambda t: t.strftime('%d-%b-%Y'),
+        "Monto de Cuota": "$ {:,.2f}",
+        "Saldo Restante": "$ {:,.2f}",
+        "No. Cuota": "{:,.0f}"
+    }).set_table_styles([
+        {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6'), ('color', '#1f1f1f')]},
+        {'selector': 'td', 'props': [('text-align', 'center')]}
+    ])
+
+    st.dataframe(
+        df_amort_estilizado,
+        use_container_width=True, 
+        hide_index=True
+    )
