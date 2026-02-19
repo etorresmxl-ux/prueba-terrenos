@@ -168,7 +168,6 @@ if menu == "🤝 Ventas":
     df_ventas = cargar_datos("ventas")
     df_clientes = cargar_datos("clientes")
     df_ubicaciones = cargar_datos("ubicaciones")
-    # Pasamos todo lo necesario para la transacción
     render_ventas(df_ventas, df_clientes, df_ubicaciones, conn, URL_SHEET, fmt_moneda, cargar_datos)
 
 if menu == "📊 Detalle de Crédito":
@@ -192,7 +191,3 @@ if menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_clientes = cargar_datos("clientes")
     render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
-
-
-
-
