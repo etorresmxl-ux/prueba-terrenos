@@ -78,7 +78,7 @@ if menu == "🏠 Inicio":
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
     df_g = cargar_datos("gastos")
-    render_inicio(df_v, df_p, df_g, fmt_moneda)
+    render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda)
 
 elif menu == "📝 Ventas":
     df_v = cargar_datos("ventas")
@@ -108,4 +108,5 @@ elif menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_clientes = cargar_datos("clientes")
     render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
+
 
