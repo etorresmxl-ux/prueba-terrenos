@@ -156,12 +156,12 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
 
             # 3. Aplicamos el gran diccionario de formatos
             df_historial_estilizado = df_historial.style.format({
-                "fecha": lambda t: t.strftime('%d-%b-%Y'), # Formato: 15-Feb-2026
+                "fecha": lambda t: t.strftime('%d-%b-%Y'),
                 "precio_total": "$ {:,.2f}",
                 "enganche": "$ {:,.2f}",
                 "mensualidad": "$ {:,.2f}",
                 "comision": "$ {:,.2f}",
-                "plazo_meses": "{:,.0f}"
+                "plazo_meses": "{:%d}"
             })
 
             # 4. Renderizamos
