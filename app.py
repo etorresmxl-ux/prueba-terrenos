@@ -5,7 +5,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 # --- IMPORTACION DE MODULOS ---
-from modulos.reportes import render_reportes
+from modulos.reportes import render_inicio
 from modulos.ventas import render_ventas
 from modulos.credito import render_detalle_credito
 from modulos.cobranza import render_cobranza
@@ -78,7 +78,7 @@ if menu == "🏠 Inicio":
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
     df_g = cargar_datos("gastos")
-    render_reportes(df_v, df_p, df_g, fmt_moneda)
+    render_inicio(df_v, df_p, df_g, fmt_moneda)
 
 if menu == "🤝 Ventas":
     df_ventas = cargar_datos("ventas")
@@ -107,4 +107,5 @@ if menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_clientes = cargar_datos("clientes")
     render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
+
 
