@@ -161,7 +161,7 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                 "enganche": "$ {:,.2f}",
                 "mensualidad": "$ {:,.2f}",
                 "comision": "$ {:,.2f}",
-                "plazo_meses": "{:%d}"
+                "plazo_meses": "{:.0f}"
             })
 
             # 4. Renderizamos
