@@ -142,24 +142,29 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                         st.success("¡Actualizado!"); st.cache_data.clear(); st.rerun()
 
     # ---------------------------------------------------------
-    # PESTAÑA 3: HISTORIAL (CON FORMATO Y COLUMNA OCULTA)
+    # PESTAÑA 3: HISTORIAL (CON FORMATO MEJORADO)
     # ---------------------------------------------------------
     with tab_lista:
         if not df_v.empty:
-            # 1. Ocultamos 'id_venta' seleccionando todas las demás columnas
-            # (Usamos loc para asegurar que no modifiquemos el original)
+            # 1. Limpieza y preparación
             cols_a_mostrar = [c for c in df_v.columns if c != 'id_venta']
             df_historial = df_v[cols_a_mostrar].copy()
 
-            # 2. Aplicamos formato de moneda con comas y 2 decimales
+            # 2. Aseguramos que la columna fecha sea tratada como fecha
+            # (El formato '%d-%b-%Y' genera: 15-Feb-2026)
+            df_historial['fecha'] = pd.to_datetime(df_historial['fecha'])
+
+            # 3. Aplicamos el gran diccionario de formatos
             df_historial_estilizado = df_historial.style.format({
+                "fecha": lambda t: t.strftime('%d-%b-%Y'), # Formato: 15-Feb-2026
                 "precio_total": "$ {:,.2f}",
                 "enganche": "$ {:,.2f}",
                 "mensualidad": "$ {:,.2f}",
-                "comision": "$ {:,.2f}"
+                "comision": "$ {:,.2f}",
+                "plazo_meses": "{:,.0f}"
             })
 
-            # 3. Renderizamos
+            # 4. Renderizamos
             st.dataframe(
                 df_historial_estilizado, 
                 use_container_width=True, 
