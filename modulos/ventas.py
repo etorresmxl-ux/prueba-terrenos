@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
 
 def render_ventas(df_v, df_c, df_u, conn, URL_SHEET, fmt_moneda, cargar_datos):
     st.title("🤝 Registro de Ventas")
