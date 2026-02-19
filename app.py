@@ -4,10 +4,11 @@ import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-# --- IMPORTACIONES AL INICIO DEL ARCHIVO ---
-
+# --- IMPORTACION DE MODULOS ---
+from modulos.gastos import render_gastos
 from modulos.ubicaciones import render_ubicaciones
 from modulos.clientes import render_clientes
+
 
 # 1. CONFIGURACIÓN DE LA PÁGINA
 st.set_page_config(page_title="Inmobiliaria Pro", layout="wide")
@@ -575,20 +576,9 @@ elif menu == "💰 Cobranza":
                             conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
                             st.error("Pago borrado."); st.cache_data.clear(); st.rerun()
 
-# ==========================================
-# 💸 MÓDULO: GASTOS
-# ==========================================
-elif menu == "💸 Gastos":
-    st.title("💸 Gastos")
-    df_g = cargar_datos("gastos")
-    with st.form("gas"):
-        con = st.text_input("Concepto")
-        mon = st.number_input("Monto ($)", min_value=0.0)
-        if st.form_submit_button("Guardar"):
-            id_g = int(df_g["id_gasto"].max() + 1) if not df_g.empty else 1
-            nuevo = pd.DataFrame([{"id_gasto": id_g, "fecha": datetime.now().strftime('%Y-%m-%d'), "concepto": con, "monto": mon}])
-            conn.update(spreadsheet=URL_SHEET, worksheet="gastos", data=pd.concat([df_g, nuevo]))
-            st.success("Gasto guardado"); st.cache_data.clear(); st.rerun()
+if menu == "💸 Gastos":
+    df_gastos = cargar_datos("gastos")
+    render_gastos(df_gastos, conn, URL_SHEET, fmt_moneda, cargar_datos)
 
 if menu == "📍 Ubicaciones":
     df_ubicaciones = cargar_datos("ubicaciones")
@@ -597,3 +587,4 @@ if menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_clientes = cargar_datos("clientes")
     render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
+
