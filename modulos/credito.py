@@ -68,38 +68,41 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
 
     st.divider()
 
-    # --- SECCIÓN: TABLA DE AMORTIZACIÓN ---
-    st.subheader("📅 Plan de Pagos Mensuales")
-    
-    amortizacion = []
-    bolsa_pagos = abonos_mensuales
+    # --- TABLA DE AMORTIZACIÓN CON DISEÑO PROFESIONAL ---
+        st.subheader("📅 Cronograma de Pagos")
 
-    for i in range(1, int(v['plazo_meses']) + 1):
-        fecha_vencimiento = fecha_contrato + relativedelta(months=i)
-        pago_realizado = 0.0
-        
-        if bolsa_pagos >= mensualidad_pactada:
-            pago_realizado = mensualidad_pactada
-            bolsa_pagos -= mensualidad_pactada
-            estatus = "🟢 PAGADO"
-        elif bolsa_pagos > 0:
-            pago_realizado = bolsa_pagos
-            bolsa_pagos = 0
-            estatus = "🟡 PAGO PARCIAL"
-        else:
-            pago_realizado = 0.0
-            if fecha_vencimiento.date() <= hoy.date():
-                estatus = "🔴 VENCIDO"
-            else:
-                estatus = "PENDIENTE"
-        
-        amortizacion.append({
-            "Mes": i,
-            "Vencimiento": fecha_vencimiento.strftime('%d/%m/%Y'),
-            "Importe": mensualidad_pactada,
-            "Pagado": pago_realizado,
-            "Estatus": estatus
-        })
+        # 1. Renombrar columnas para que se vean bien (Nombre Propio)
+        # Ajusta los nombres de la izquierda según cómo se llamen originalmente en tu código
+        nuevos_nombres_amort = {
+            "n_cuota": "No. Cuota",
+            "fecha_pago": "Fecha de Pago",
+            "monto_cuota": "Monto de Cuota",
+            "estado": "Estatus",
+            "saldo_pendiente": "Saldo Restante"
+        }
 
-    df_tab = pd.DataFrame(amortizacion)
-    st.dataframe(df_tab, use_container_width=True, hide_index=True)
+        # Aplicamos el filtro de columnas y el renombrado
+        df_visual = df_amort.rename(columns=nuevos_nombres_amort)
+
+        # 2. Asegurar que la fecha sea datetime para el formato
+        if "Fecha de Pago" in df_visual.columns:
+            df_visual["Fecha de Pago"] = pd.to_datetime(df_visual["Fecha de Pago"])
+
+        # 3. Aplicar Estilos y Formatos
+        df_amort_estilizado = df_visual.style.format({
+            "Fecha de Pago": lambda t: t.strftime('%d-%b-%Y'),
+            "Monto de Cuota": "$ {:,.2f}",
+            "Saldo Restante": "$ {:,.2f}"
+        }).set_table_styles([
+            # Centrar encabezados y darles un toque visual
+            {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6'), ('color', '#1f1f1f')]},
+            # Opcional: Centrar el contenido de las celdas
+            {'selector': 'td', 'props': [('text-align', 'center')]}
+        ])
+
+        # 4. Renderizar
+        st.dataframe(
+            df_amort_estilizado,
+            use_container_width=True,
+            hide_index=True
+        )
