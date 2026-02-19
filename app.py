@@ -5,7 +5,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 # --- IMPORTACION DE MODULOS ---
-from modulos.reportes import render_inicio
+from modulos.inicio import render_inicio
 from modulos.ventas import render_ventas
 from modulos.credito import render_detalle_credito
 from modulos.cobranza import render_cobranza
@@ -109,3 +109,4 @@ elif menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_cl = cargar_datos("clientes")
     render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
+
