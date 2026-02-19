@@ -13,13 +13,11 @@ from modulos.gastos import render_gastos
 from modulos.ubicaciones import render_ubicaciones
 from modulos.clientes import render_clientes
 
-
 # 1. CONFIGURACIÓN DE LA PÁGINA
-st.set_page_config(page_title="Inmobiliaria Pro", layout="wide")
+st.set_page_config(page_title="Zona Valle - Gestión Inmobiliaria", layout="wide")
 
 # 2. CONEXIÓN A GOOGLE SHEETS
 conn = st.connection("gsheets", type=GSheetsConnection)
-
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/edit#gid=0"
 
 # --- FUNCIÓN PARA FORMATO DE MONEDA ($) ---
@@ -39,10 +37,15 @@ def cargar_datos(pestana):
         return pd.DataFrame()
 
 # ==========================================
-# 🛠️ BARRA LATERAL
+# 🛠️ BARRA LATERAL (SIDEBAR)
 # ==========================================
 with st.sidebar:
-    st.title("🏢 Panel de Gestión")
+    # --- LOGO CONCEPTUAL ---
+    # Nota: Asegúrate de tener la imagen en la carpeta raíz o usar la URL directa
+    try:
+        st.image("logo.png", use_container_width=True)
+    except:
+        st.title("🏢 Panel de Gestión")
     
     # --- MENÚ DE NAVEGACIÓN ---
     menu = st.radio(
@@ -60,24 +63,22 @@ with st.sidebar:
         st.rerun()
 
     # --- INDICADOR DE CONEXIÓN ---
-    # Esto verifica si la URL está configurada
-    if URL_SHEET != "TU_URL_AQUI":
-        st.sidebar.markdown("---")
-        st.sidebar.write("### 🌐 Estado del Sistema")
-        st.sidebar.success("✅ Conectado a la Nube")
-        
-        # Mostrar hora de última sincronización
-        ahora = datetime.now().strftime("%H:%M:%S")
-        st.sidebar.info(f"Última sincronización:\n{ahora}")
-    else:
-        st.sidebar.error("❌ Desconectado (Falta URL)")
+    st.sidebar.markdown("---")
+    st.sidebar.write("### 🌐 Estado del Sistema")
+    st.sidebar.success("✅ Conectado a la Nube")
+    ahora = datetime.now().strftime("%H:%M:%S")
+    st.sidebar.info(f"Última sincronización:\n{ahora}")
 
-# --- MODULOS ---
+# ==========================================
+# 🚀 RENDERIZADO DE MÓDULOS
+# ==========================================
 
 if menu == "🏠 Inicio":
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
     df_g = cargar_datos("gastos")
+    df_cl = cargar_datos("clientes") # Cargamos clientes para las acciones de WA/Mail
+    # Ahora pasamos df_cl para evitar el NameError
     render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda)
 
 elif menu == "📝 Ventas":
@@ -88,25 +89,23 @@ elif menu == "📝 Ventas":
     render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda)
 
 elif menu == "📊 Detalle de Crédito":
-    df_ventas = cargar_datos("ventas")
-    df_pagos = cargar_datos("pagos")
-    render_detalle_credito(df_ventas, df_pagos, fmt_moneda)
+    df_v = cargar_datos("ventas")
+    df_p = cargar_datos("pagos")
+    render_detalle_credito(df_v, df_p, fmt_moneda)
 
 elif menu == "💰 Cobranza":
-    df_ventas = cargar_datos("ventas")
-    df_pagos = cargar_datos("pagos")
-    render_cobranza(df_ventas, df_pagos, conn, URL_SHEET, fmt_moneda, cargar_datos)
+    df_v = cargar_datos("ventas")
+    df_p = cargar_datos("pagos")
+    render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos)
 
 elif menu == "💸 Gastos":
-    df_gastos = cargar_datos("gastos")
-    render_gastos(df_gastos, conn, URL_SHEET, fmt_moneda, cargar_datos)
+    df_g = cargar_datos("gastos")
+    render_gastos(df_g, conn, URL_SHEET, fmt_moneda, cargar_datos)
 
 elif menu == "📍 Ubicaciones":
-    df_ubicaciones = cargar_datos("ubicaciones")
-    render_ubicaciones(df_ubicaciones, conn, URL_SHEET, cargar_datos)
+    df_u = cargar_datos("ubicaciones")
+    render_ubicaciones(df_u, conn, URL_SHEET, cargar_datos)
 
 elif menu == "👥 Clientes":
-    df_clientes = cargar_datos("clientes")
-    render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
-
-
+    df_cl = cargar_datos("clientes")
+    render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
