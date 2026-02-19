@@ -24,7 +24,7 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
 
     st.divider()
     
-    # --- MONITOR DE CARTERA ---
+    # --- MONITOR DE CARTERA CON LINKS CORTOS ---
     st.subheader("🚩 Monitor de Cartera")
     if not df_v.empty:
         monitor = []
@@ -42,9 +42,8 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
             deuda_vencida = max(0.0, (m_transcurridos * mensualidad) - total_pagado)
             m_atraso = deuda_vencida / mensualidad if mensualidad > 0 else 0
             
-            # Variables para las celdas combinadas
-            col_wa_display = ""
-            col_mail_display = ""
+            link_wa = ""
+            link_mail = ""
 
             if deuda_vencida > 1.0:
                 estatus = "🔴 ATRASO"
@@ -52,28 +51,21 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
                 f_vence = f_con + relativedelta(months=int(cuotas_ok) + 1)
                 dias_a = (hoy - f_vence).days if hoy > f_vence else 0
                 
+                # --- ACCIONES PARA MOROSIDAD > 3 MESES ---
                 if m_atraso >= 3:
                     c_info = df_cl[df_cl['nombre'] == v['cliente']]
                     if not c_info.empty:
-                        correo_real = str(c_info.iloc[0].get('correo', ''))
-                        tel_real = str(c_info.iloc[0].get('telefono', ''))
+                        correo = str(c_info.iloc[0].get('correo', ''))
+                        tel = str(c_info.iloc[0].get('telefono', '')).replace(" ", "").replace("-", "")
                         
-                        tel_link = tel_real.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-                        msj = f"Hola {v['cliente']}, le contactamos de Zona Valle respecto a su lote en {v['ubicacion']}..."
+                        msj = f"Hola {v['cliente']}, le contactamos de Zona Valle respecto a su lote en {v['ubicacion']}. Nos gustaría invitarle a la oficina para revisar su plan de pagos."
                         msj_enc = urllib.parse.quote(msj)
                         
-                        # CREACIÓN DE CELDA COMBINADA (LINK + TEXTO)
-                        if tel_real:
-                            # Formato: [Icono](URL) Numero
-                            col_wa_display = f"https://wa.me/{tel_link}?text={msj_enc}"
-                        if correo_real:
-                            # Formato: [Icono](URL) Correo
-                            col_mail_display = f"mailto:{correo_real}?subject=Invitación Especial&body={msj_enc}"
+                        if tel: link_wa = f"https://wa.me/{tel}?text={msj_enc}"
+                        if correo: link_mail = f"mailto:{correo}?subject=Invitación Especial&body={msj_enc}"
             else:
                 estatus = "🟢 AL CORRIENTE"
                 dias_a = 0
-                tel_real = ""
-                correo_real = ""
 
             monitor.append({
                 "Ubicación": v['ubicacion'], 
@@ -81,15 +73,13 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
                 "Estatus": estatus, 
                 "Días de Atraso": dias_a,
                 "Deuda Vencida": deuda_vencida,
-                "WhatsApp": col_wa_display,
-                "Tel_Txt": tel_real if m_atraso >= 3 else "",
-                "Email": col_mail_display,
-                "Mail_Txt": correo_real if m_atraso >= 3 else ""
+                "WhatsApp": link_wa,
+                "Email": link_mail
             })
         
         df_mon = pd.DataFrame(monitor)
 
-        # RENDERIZADO CON CONFIGURACIÓN DE LINK PERSONALIZADO
+        # RENDERIZADO CON LINKS CORTOS "ENVIAR"
         st.dataframe(
             df_mon.style.format({
                 "Deuda Vencida": "$ {:,.2f}",
@@ -98,16 +88,8 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
             use_container_width=True,
             hide_index=True,
             column_config={
-                "WhatsApp": st.column_config.LinkColumn(
-                    "💬 WhatsApp", 
-                    display_text=r"📲 Enviar a: (.*)", # Esto es un truco visual para que parezca texto al lado
-                ),
-                "Tel_Txt": st.column_config.TextColumn("📞 Número"),
-                "Email": st.column_config.LinkColumn(
-                    "📧 Correo", 
-                    display_text="📩 Redactar para cliente"
-                ),
-                "Mail_Txt": st.column_config.TextColumn("📩 Dirección de Correo"),
+                "WhatsApp": st.column_config.LinkColumn("💬 WA", display_text="📲 Enviar"),
+                "Email": st.column_config.LinkColumn("📧 Correo", display_text="📩 Enviar"),
                 "Días de Atraso": st.column_config.NumberColumn(format="%d días")
             }
         )
