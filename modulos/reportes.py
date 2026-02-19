@@ -13,11 +13,12 @@ def render_inicio(df_v, df_p, df_g, fmt_moneda):
         st.markdown(f"<p style='text-align: right; color: gray; padding-top: 25px;'><b>Fecha Actual:</b><br>{fecha_hoy}</p>", unsafe_allow_html=True)
 
     # MÉTRICAS PRINCIPALES
-    # Nota: Los ingresos consideran abonos + enganches de las ventas
     c1, c2, c3 = st.columns(3)
+    # Ingresos = Abonos registrados + Enganches de ventas
     ingresos = (df_p["monto"].sum() if not df_p.empty else 0) + (df_v["enganche"].sum() if not df_v.empty else 0)
     egresos = df_g["monto"].sum() if not df_g.empty else 0
     
+    # Aquí usamos fmt_moneda que ya configuramos con comas en app.py
     c1.metric("Ingresos Totales", fmt_moneda(ingresos))
     c2.metric("Gastos Totales", fmt_moneda(egresos), delta=f"-{fmt_moneda(egresos)}", delta_color="inverse")
     c3.metric("Utilidad Neta", fmt_moneda(ingresos - egresos))
@@ -40,11 +41,10 @@ def render_inicio(df_v, df_p, df_g, fmt_moneda):
             else:
                 ultima_fecha_pago = "Sin Pagos"
             
-            # 2. Lógica de Atraso y Días
+            # 2. Lógica de Atraso
             f_contrato = pd.to_datetime(v['fecha'])
             mensualidad = float(v['mensualidad'])
             
-            # Meses que han pasado desde el contrato hasta hoy
             diff = relativedelta(hoy, f_contrato)
             meses_transcurridos = (diff.years * 12) + diff.months
             
@@ -53,9 +53,7 @@ def render_inicio(df_v, df_p, df_g, fmt_moneda):
             
             if deuda_vencida > 1.0:
                 estatus = "🔴 ATRASO"
-                # Calculamos cuántas cuotas ha cubierto realmente con su dinero
                 cuotas_cubiertas = total_pagado_cliente / mensualidad
-                # El atraso real es desde el primer mes que no completó
                 fecha_vencimiento_pendiente = f_contrato + relativedelta(months=int(cuotas_cubiertas) + 1)
                 dias_atraso = (hoy - fecha_vencimiento_pendiente).days if hoy > fecha_vencimiento_pendiente else 0
             else:
@@ -75,16 +73,21 @@ def render_inicio(df_v, df_p, df_g, fmt_moneda):
                 "Saldo Restante": saldo_restante
             })
         
-        # MOSTRAR TABLA CON CONFIGURACIÓN DE COLUMNAS $
+        # --- APLICACIÓN DE FORMATO CON PANDAS STYLE ---
+        df_monitor = pd.DataFrame(monitor)
+        
+        # Formateamos con comas para miles y 2 decimales
+        df_estilizado = df_monitor.style.format({
+            "Deuda Vencida": "$ {:,.2f}",
+            "Saldo Restante": "$ {:,.2f}",
+            "Días de Atraso": "{:,.0f} días"
+        })
+        
+        # Mostramos la tabla final
         st.dataframe(
-            pd.DataFrame(monitor), 
+            df_estilizado, 
             use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Deuda Vencida": st.column_config.NumberColumn(format="$ ,.2f"),
-                "Saldo Restante": st.column_config.NumberColumn(format="$ ,.2f"),
-                "Días de Atraso": st.column_config.NumberColumn(format="%d días")
-            }
+            hide_index=True
         )
     else:
         st.info("No hay ventas registradas.")
