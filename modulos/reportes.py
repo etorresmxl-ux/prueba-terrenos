@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-import urllib.parse  # Para codificar los mensajes
+import urllib.parse
 
-def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda): # Añadimos df_cl para sacar los correos/tels
-    # FILA SUPERIOR: Título y Fecha
+def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
+    # --- FILA SUPERIOR ---
     col_tit, col_fec = st.columns([3, 1])
     with col_tit:
         st.title("🏠 Tablero de Control")
@@ -13,7 +13,7 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda): # Añadimos df_cl para s
         fecha_hoy = datetime.now().strftime('%d / %m / %Y')
         st.markdown(f"<p style='text-align: right; color: gray; padding-top: 25px;'><b>Fecha Actual:</b><br>{fecha_hoy}</p>", unsafe_allow_html=True)
 
-    # MÉTRICAS PRINCIPALES
+    # --- MÉTRICAS ---
     c1, c2, c3 = st.columns(3)
     ingresos = (df_p["monto"].sum() if not df_p.empty else 0) + (df_v["enganche"].sum() if not df_v.empty else 0)
     egresos = df_g["monto"].sum() if not df_g.empty else 0
@@ -24,86 +24,75 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda): # Añadimos df_cl para s
 
     st.divider()
     
-    # MONITOR DE CARTERA DETALLADO
+    # --- MONITOR DE CARTERA CON DOBLE ACCIÓN ---
     st.subheader("🚩 Monitor de Cartera")
     if not df_v.empty:
         monitor = []
         hoy = datetime.now()
         
         for _, v in df_v.iterrows():
-            pagos_especificos = df_p[df_p['ubicacion'] == v['ubicacion']] if not df_p.empty else pd.DataFrame()
-            total_pagado_cliente = pagos_especificos['monto'].sum() if not pagos_especificos.empty else 0
-            
-            ultima_fecha_pago = pd.to_datetime(pagos_especificos['fecha']).max().strftime('%d/%m/%Y') if not pagos_especificos.empty else "Sin Pagos"
+            pagos_esp = df_p[df_p['ubicacion'] == v['ubicacion']] if not df_p.empty else pd.DataFrame()
+            total_pagado = pagos_esp['monto'].sum() if not pagos_esp.empty else 0
             
             # Lógica de Atraso
-            f_contrato = pd.to_datetime(v['fecha'])
+            f_con = pd.to_datetime(v['fecha'])
             mensualidad = float(v['mensualidad'])
-            diff = relativedelta(hoy, f_contrato)
-            meses_transcurridos = (diff.years * 12) + diff.months
+            diff = relativedelta(hoy, f_con)
+            m_transcurridos = (diff.years * 12) + diff.months
+            deuda_vencida = max(0.0, (m_transcurridos * mensualidad) - total_pagado)
+            m_atraso = deuda_vencida / mensualidad if mensualidad > 0 else 0
             
-            deuda_teorica = meses_transcurridos * mensualidad
-            deuda_vencida = deuda_teorica - total_pagado_cliente
-            
-            # Cálculo de meses de atraso para el reto
-            meses_atraso = deuda_vencida / mensualidad if mensualidad > 0 else 0
-            accion_link = ""
+            link_mail = ""
+            link_wa = ""
 
             if deuda_vencida > 1.0:
                 estatus = "🔴 ATRASO"
-                cuotas_cubiertas = total_pagado_cliente / mensualidad
-                fecha_vencimiento_pendiente = f_contrato + relativedelta(months=int(cuotas_cubiertas) + 1)
-                dias_atraso = (hoy - fecha_vencimiento_pendiente).days if hoy > fecha_vencimiento_pendiente else 0
+                cuotas_ok = total_pagado / mensualidad
+                f_vence = f_con + relativedelta(months=int(cuotas_ok) + 1)
+                dias_a = (hoy - f_vence).days if hoy > f_vence else 0
                 
-                # --- RETO: GENERAR ACCIÓN SI HAY > 3 MESES ---
-                if meses_atraso >= 3:
-                    # Buscamos datos del cliente en df_cl
-                    c_info = df_cl[df_cl['nombre'] == v['cliente']].iloc[0] if not df_cl.empty else {}
-                    correo = c_info.get('correo', '')
-                    
-                    asunto = "Invitación Especial - Actualización de Proyecto"
-                    cuerpo = f"Hola {v['cliente']}, le invitamos a nuestras oficinas para platicar sobre su lote en {v['ubicacion']} y ofrecerle alternativas de pago. Saludos."
-                    
-                    # Codificar para URL
-                    asunto_esc = urllib.parse.quote(asunto)
-                    cuerpo_esc = urllib.parse.quote(cuerpo)
-                    accion_link = f"mailto:{correo}?subject={asunto_esc}&body={cuerpo_esc}"
+                # --- ACCIONES PARA MOROSIDAD > 3 MESES ---
+                if m_atraso >= 3:
+                    # Buscar contacto del cliente
+                    c_info = df_cl[df_cl['nombre'] == v['cliente']]
+                    if not c_info.empty:
+                        correo = str(c_info.iloc[0].get('correo', ''))
+                        tel = str(c_info.iloc[0].get('telefono', '')).replace(" ", "").replace("-", "")
+                        
+                        msj = f"Hola {v['cliente']}, le contactamos de Zona Valle respecto a su lote en {v['ubicacion']}. Nos gustaría invitarle a la oficina para revisar su plan de pagos. ¿Qué día podría visitarnos?"
+                        msj_enc = urllib.parse.quote(msj)
+                        
+                        link_mail = f"mailto:{correo}?subject=Invitación Especial&body={msj_enc}"
+                        link_wa = f"https://wa.me/{tel}?text={msj_enc}"
             else:
                 estatus = "🟢 AL CORRIENTE"
-                deuda_vencida = 0.0
-                dias_atraso = 0
-            
-            saldo_restante = float(v['precio_total']) - float(v['enganche']) - total_pagado_cliente
-            
+                dias_a = 0
+
             monitor.append({
                 "Ubicación": v['ubicacion'], 
                 "Cliente": v['cliente'], 
                 "Estatus": estatus, 
-                "Último Pago": ultima_fecha_pago,
-                "Días de Atraso": dias_atraso,
+                "Días de Atraso": dias_a,
                 "Deuda Vencida": deuda_vencida,
-                "Acción": accion_link  # Nueva columna para el link
+                "WhatsApp": link_wa,
+                "Email": link_mail
             })
         
-        df_monitor = pd.DataFrame(monitor)
-        
-        # Estilos
-        df_estilizado = df_monitor.style.format({
+        df_mon = pd.DataFrame(monitor)
+        df_est = df_mon.style.format({
             "Deuda Vencida": "$ {:,.2f}",
-            "Días de Atraso": "{:,.0f} días"
+            "Días de Atraso": "{:,.0f} d"
         })
         
-        # --- RENDERIZADO CON CONFIGURACIÓN DE COLUMNA DE LINK ---
+        # Configuración de columnas para iconos y links
         st.dataframe(
-            df_estilizado, 
-            use_container_width=True, 
+            df_est,
+            use_container_width=True,
             hide_index=True,
             column_config={
-                "Acción": st.column_config.LinkColumn(
-                    "📧 Invitación",
-                    display_text="Enviar Correo",
-                    help="Disponible para atrasos mayores a 3 meses"
-                )
+                "WhatsApp": st.column_config.LinkColumn("💬 WA", display_text="📲 Enviar"),
+                "Email": st.column_config.LinkColumn("📧 Correo", display_text="📩 Enviar"),
+                "Días de Atraso": st.column_config.NumberColumn(format="%d días")
             }
         )
     else:
