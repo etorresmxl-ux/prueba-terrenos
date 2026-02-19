@@ -48,7 +48,6 @@ def render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos):
                     
                     f_com = st.text_area("Notas")
                     if st.form_submit_button("✅ REGISTRAR PAGO", type="primary"):
-                        # Generación de ID segura
                         nid = 1
                         if not df_p.empty and "id_pago" in df_p.columns:
                             try: nid = int(float(df_p["id_pago"].max())) + 1
@@ -108,4 +107,31 @@ def render_cobranza(df_v, df_p, conn, URL_SHEET, fmt_moneda, cargar_datos):
                             st.error("Pago eliminado."); st.cache_data.clear(); st.rerun()
 
             st.divider()
-            st.dataframe(df_p, use_container_width=True, hide_index=True)
+            
+            # --- NUEVA LÓGICA DE TABLA ESTILIZADA ---
+            # 1. Renombrado y Ocultamiento de ID
+            nuevos_nombres_p = {
+                "fecha": "Fecha de Pago",
+                "ubicacion": "Ubicación",
+                "cliente": "Cliente",
+                "monto": "Monto Pagado",
+                "metodo": "Método",
+                "folio": "Folio / Referencia",
+                "comentarios": "Notas"
+            }
+            
+            df_visual_p = df_p.drop(columns=["id_pago"], errors="ignore").rename(columns=nuevos_nombres_p)
+            
+            # 2. Asegurar formato de fecha para el estilizado
+            df_visual_p["Fecha de Pago"] = pd.to_datetime(df_visual_p["Fecha de Pago"])
+            
+            # 3. Aplicar Formatos y Centrado
+            df_p_estilizado = df_visual_p.style.format({
+                "Fecha de Pago": lambda t: t.strftime('%d-%b-%Y'),
+                "Monto Pagado": "$ {:,.2f}"
+            }).set_table_styles([
+                {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6')]},
+                {'selector': 'td', 'props': [('text-align', 'center')]}
+            ])
+            
+            st.dataframe(df_p_estilizado, use_container_width=True, hide_index=True)
