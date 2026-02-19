@@ -24,7 +24,7 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
 
     st.divider()
     
-    # --- MONITOR DE CARTERA CON DOBLE ACCIÓN ---
+    # --- MONITOR DE CARTERA CON DOBLE ACCIÓN Y VALIDACIÓN ---
     st.subheader("🚩 Monitor de Cartera")
     if not df_v.empty:
         monitor = []
@@ -44,6 +44,8 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
             
             link_mail = ""
             link_wa = ""
+            val_tel = ""   # Variable para mostrar el texto del teléfono
+            val_cor = ""   # Variable para mostrar el texto del correo
 
             if deuda_vencida > 1.0:
                 estatus = "🔴 ATRASO"
@@ -53,17 +55,19 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
                 
                 # --- ACCIONES PARA MOROSIDAD > 3 MESES ---
                 if m_atraso >= 3:
-                    # Buscar contacto del cliente
                     c_info = df_cl[df_cl['nombre'] == v['cliente']]
                     if not c_info.empty:
-                        correo = str(c_info.iloc[0].get('correo', ''))
-                        tel = str(c_info.iloc[0].get('telefono', '')).replace(" ", "").replace("-", "")
+                        val_cor = str(c_info.iloc[0].get('correo', ''))
+                        val_tel = str(c_info.iloc[0].get('telefono', ''))
+                        
+                        # Limpiar teléfono para el link
+                        tel_link = val_tel.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
                         
                         msj = f"Hola {v['cliente']}, le contactamos de Zona Valle respecto a su lote en {v['ubicacion']}. Nos gustaría invitarle a la oficina para revisar su plan de pagos. ¿Qué día podría visitarnos?"
                         msj_enc = urllib.parse.quote(msj)
                         
-                        link_mail = f"mailto:{correo}?subject=Invitación Especial&body={msj_enc}"
-                        link_wa = f"https://wa.me/{tel}?text={msj_enc}"
+                        link_mail = f"mailto:{val_cor}?subject=Invitación Especial&body={msj_enc}"
+                        link_wa = f"https://wa.me/{tel_link}?text={msj_enc}"
             else:
                 estatus = "🟢 AL CORRIENTE"
                 dias_a = 0
@@ -75,23 +79,27 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
                 "Días de Atraso": dias_a,
                 "Deuda Vencida": deuda_vencida,
                 "WhatsApp": link_wa,
-                "Email": link_mail
+                "Confirmar Tel": val_tel, # Nueva columna visible
+                "Email": link_mail,
+                "Confirmar Correo": val_cor # Nueva columna visible
             })
         
         df_mon = pd.DataFrame(monitor)
-        df_est = df_mon.style.format({
-            "Deuda Vencida": "$ {:,.2f}",
-            "Días de Atraso": "{:,.0f} d"
-        })
         
-        # Configuración de columnas para iconos y links
+        # Configuración de la tabla con validación a la derecha de los botones
         st.dataframe(
-            df_est,
+            df_mon.style.format({
+                "Deuda Vencida": "$ {:,.2f}",
+                "Días de Atraso": "{:,.0f} d"
+            }),
             use_container_width=True,
             hide_index=True,
             column_config={
+                "Deuda Vencida": st.column_config.TextColumn("Deuda Vencida"),
                 "WhatsApp": st.column_config.LinkColumn("💬 WA", display_text="📲 Enviar"),
+                "Confirmar Tel": st.column_config.TextColumn("📞 Teléfono"),
                 "Email": st.column_config.LinkColumn("📧 Correo", display_text="📩 Enviar"),
+                "Confirmar Correo": st.column_config.TextColumn("📩 Correo Electrónico"),
                 "Días de Atraso": st.column_config.NumberColumn(format="%d días")
             }
         )
