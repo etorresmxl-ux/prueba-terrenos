@@ -80,11 +80,12 @@ if menu == "🏠 Inicio":
     df_g = cargar_datos("gastos")
     render_inicio(df_v, df_p, df_g, fmt_moneda)
 
-if menu == "🤝 Ventas":
-    df_ventas = cargar_datos("ventas")
-    df_clientes = cargar_datos("clientes")
-    df_ubicaciones = cargar_datos("ubicaciones")
-    render_ventas(df_ventas, df_clientes, df_ubicaciones, conn, URL_SHEET, fmt_moneda, cargar_datos)
+if menu == "📝 Ventas":
+    df_v = cargar_datos("ventas")
+    df_u = cargar_datos("ubicaciones")
+    df_cl = cargar_datos("clientes")
+    df_vd = cargar_datos("vendedores")
+    render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda)
 
 if menu == "📊 Detalle de Crédito":
     df_ventas = cargar_datos("ventas")
@@ -107,5 +108,6 @@ if menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_clientes = cargar_datos("clientes")
     render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
+
 
 
