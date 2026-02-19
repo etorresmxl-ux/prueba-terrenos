@@ -81,8 +81,8 @@ def render_inicio(df_v, df_p, df_g, fmt_moneda):
             use_container_width=True, 
             hide_index=True,
             column_config={
-                "Deuda Vencida": st.column_config.NumberColumn(format="$%,.2f"),
-                "Saldo Restante": st.column_config.NumberColumn(format="$%,.2f"),
+                "Deuda Vencida": st.column_config.NumberColumn(format="$ %f"),
+                "Saldo Restante": st.column_config.NumberColumn(format="$ %f"),
                 "Días de Atraso": st.column_config.NumberColumn(format="%d días")
             }
         )
