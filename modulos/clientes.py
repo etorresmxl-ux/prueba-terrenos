@@ -7,9 +7,34 @@ def render_clientes(df_c, conn, URL_SHEET, cargar_datos):
     # --- VISTA GENERAL ---
     st.write("### 🔍 Directorio de Clientes")
     if not df_c.empty:
-        columnas_visibles = ["nombre", "telefono", "correo", "direccion", "notas"]
+        # 1. Definimos las columnas que queremos mostrar, incluyendo el ID
+        columnas_visibles = ["id_cliente", "nombre", "telefono", "correo", "direccion", "notas"]
         cols_existentes = [c for c in columnas_visibles if c in df_c.columns]
-        st.dataframe(df_c[cols_existentes], use_container_width=True, hide_index=True)
+        
+        # 2. Diccionario para renombrar a "Nombre Propio"
+        nuevos_nombres = {
+            "id_cliente": "ID Cliente",
+            "nombre": "Nombre Completo",
+            "telefono": "Teléfono",
+            "correo": "Correo Electrónico",
+            "direccion": "Dirección",
+            "notas": "Notas"
+        }
+        
+        # Creamos una copia filtrada y renombramos
+        df_visual = df_c[cols_existentes].copy().rename(columns=nuevos_nombres)
+
+        # 3. Aplicamos Estilo (Centrado y formato de ID como entero)
+        df_estilizado = df_visual.style.format({
+            "ID Cliente": "{:,.0f}" # Evita decimales como 1.0
+        }).set_table_styles([
+            # Centrar encabezados
+            {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6')]},
+            # Centrar celdas de datos
+            {'selector': 'td', 'props': [('text-align', 'center')]}
+        ])
+
+        st.dataframe(df_estilizado, use_container_width=True, hide_index=True)
     else:
         st.info("No hay clientes registrados.")
 
