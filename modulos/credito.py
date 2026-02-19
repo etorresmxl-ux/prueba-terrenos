@@ -68,7 +68,7 @@ def render_detalle_credito(df_v, df_p, fmt_moneda):
 
     st.divider()
 
-    # --- TABLA DE AMORTIZACIÓN CON DISEÑO PROFESIONAL ---
+        # --- TABLA DE AMORTIZACIÓN CON DISEÑO PROFESIONAL ---
         st.subheader("📅 Cronograma de Pagos")
 
         # 1. Renombrar columnas para que se vean bien (Nombre Propio)
