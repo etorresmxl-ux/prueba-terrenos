@@ -191,3 +191,4 @@ if menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_clientes = cargar_datos("clientes")
     render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
+
