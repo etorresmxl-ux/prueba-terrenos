@@ -5,6 +5,7 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
 # --- IMPORTACION DE MODULOS ---
+from modulos.cobranza import render_cobranza
 from modulos.gastos import render_gastos
 from modulos.ubicaciones import render_ubicaciones
 from modulos.clientes import render_clientes
@@ -437,144 +438,10 @@ elif menu == "📊 Detalle de Crédito":
         df_tab = pd.DataFrame(amortizacion)
         st.dataframe(df_tab, use_container_width=True, hide_index=True)
 
-# ==========================================
-# 💰 MÓDULO: COBRANZA
-# ==========================================
-elif menu == "💰 Cobranza":
-    st.title("💰 Gestión de Cobranza")
-    
-    df_v = cargar_datos("ventas")
-    df_p = cargar_datos("pagos")
-
-    tab_pago, tab_historial = st.tabs(["💵 Registrar Nuevo Pago", "📋 Historial y Edición"])
-
-    # ---------------------------------------------------------
-    # PESTAÑA 1: REGISTRAR NUEVO PAGO
-    # ---------------------------------------------------------
-    with tab_pago:
-        if df_v.empty:
-            st.warning("No hay ventas registradas.")
-        else:
-            opciones_vta = (df_v["ubicacion"] + " | " + df_v["cliente"]).tolist()
-            seleccion = st.selectbox("🔍 Seleccione Contrato:", ["--"] + opciones_vta, key="sel_cobro")
-            
-            if seleccion != "--":
-                ubi_sel = seleccion.split(" | ")[0]
-                v = df_v[df_v["ubicacion"] == ubi_sel].iloc[0]
-                
-                # Cálculos de deuda sugerida
-                p_previos = df_p[df_p["ubicacion"] == ubi_sel]["monto"].sum() if not df_p.empty and "monto" in df_p.columns else 0
-                f_con = pd.to_datetime(v['fecha'])
-                hoy = datetime.now()
-                meses_t = (hoy.year - f_con.year) * 12 + (hoy.month - f_con.month)
-                deuda_esp = max(0, min(meses_t, int(v['plazo_meses']))) * float(v['mensualidad'])
-                s_vencido = max(0, deuda_esp - p_previos)
-                
-                monto_sug = s_vencido if s_vencido > 0 else float(v['mensualidad'])
-                
-                if s_vencido > 0:
-                    st.error(f"⚠️ Atraso detectado: {fmt_moneda(s_vencido)}")
-                else:
-                    st.success(f"✅ Al corriente. Sugerido: {fmt_moneda(monto_sug)}")
-
-                with st.form("form_nuevo_pago_v4"):
-                    st.write(f"### Cobro para: {v['ubicacion']}")
-                    c1, c2, c3 = st.columns(3)
-                    f_fec = c1.date_input("📅 Fecha", value=datetime.now())
-                    f_met = c2.selectbox("💳 Método", ["Efectivo", "Transferencia", "Depósito"])
-                    f_fol = c3.text_input("🧾 Folio Comprobante")
-                    
-                    col_m, col_r = st.columns([2, 1])
-                    f_mon = col_m.number_input("💵 Importe Recibido ($)", min_value=0.0, value=monto_sug)
-                    if col_r.form_submit_button("🔄 Recalcular"): 
-                        st.rerun()
-                    
-                    f_com = st.text_area("📝 Notas")
-                    
-                    if st.form_submit_button("✅ REGISTRAR PAGO", type="primary"):
-                        if f_mon <= 0:
-                            st.error("El monto debe ser mayor a $ 0")
-                        else:
-                            # Generación de ID segura
-                            nuevo_id = 1
-                            if not df_p.empty and "id_pago" in df_p.columns:
-                                try:
-                                    nuevo_id = int(float(df_p["id_pago"].max())) + 1
-                                except:
-                                    nuevo_id = len(df_p) + 1
-                            
-                            nuevo_reg = pd.DataFrame([{
-                                "id_pago": nuevo_id,
-                                "fecha": f_fec.strftime('%Y-%m-%d'),
-                                "ubicacion": ubi_sel,
-                                "cliente": v['cliente'],
-                                "monto": f_mon,
-                                "metodo": f_met,
-                                "folio": f_fol,
-                                "comentarios": f_com
-                            }])
-                            
-                            df_p = pd.concat([df_p, nuevo_reg], ignore_index=True)
-                            conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
-                            st.success(f"✅ Pago registrado con Folio: {f_fol}")
-                            st.cache_data.clear()
-                            st.rerun()
-
-    # ---------------------------------------------------------
-    # PESTAÑA 2: HISTORIAL Y EDICIÓN (Corregida)
-    # ---------------------------------------------------------
-    with tab_historial:
-        st.subheader("Historial y Correcciones")
-        if df_p.empty:
-            st.info("No hay pagos registrados.")
-        else:
-            # Mostramos la tabla primero para referencia
-            st.dataframe(df_p, use_container_width=True, hide_index=True)
-            
-            st.markdown("---")
-            # Selector de edición con corrección de ValueError
-            opciones_edit = []
-            for _, fila in df_p.iterrows():
-                # Usamos float y luego int para evitar el error de la captura
-                id_limpio = int(float(fila['id_pago']))
-                opciones_edit.append(f"{id_limpio} | {fila['fecha']} | {fila['ubicacion']} | {fmt_moneda(fila['monto'])}")
-            
-            pago_sel = st.selectbox("✏️ Seleccione un pago para modificar/eliminar:", ["--"] + opciones_edit[::-1])
-            
-            if pago_sel != "--":
-                # CORRECCIÓN CLAVE: Convertir a float antes que a int
-                id_p_sel = int(float(pago_sel.split(" | ")[0]))
-                
-                # Buscar el registro
-                idx_pago = df_p[df_p["id_pago"].astype(float).astype(int) == id_p_sel].index[0]
-                datos_p = df_p.loc[idx_pago]
-
-                with st.expander("🛠️ Panel de Edición", expanded=True):
-                    with st.form("form_edit_final"):
-                        st.warning(f"Modificando Pago ID: {id_p_sel}")
-                        ec1, ec2, ec3 = st.columns(3)
-                        e_fec = ec1.date_input("Fecha", value=pd.to_datetime(datos_p["fecha"]))
-                        e_met = ec2.selectbox("Método", ["Efectivo", "Transferencia", "Depósito"], 
-                                             index=["Efectivo", "Transferencia", "Depósito"].index(datos_p["metodo"]) if datos_p["metodo"] in ["Efectivo", "Transferencia", "Depósito"] else 0)
-                        e_fol = ec3.text_input("Folio", value=str(datos_p.get("folio", "")))
-                        
-                        e_mon = st.number_input("Monto ($)", min_value=0.0, value=float(datos_p["monto"]))
-                        e_com = st.text_area("Comentarios", value=str(datos_p.get("comentarios", "")))
-                        
-                        btn_c1, btn_c2 = st.columns(2)
-                        if btn_c1.form_submit_button("💾 ACTUALIZAR"):
-                            df_p.at[idx_pago, "fecha"] = e_fec.strftime('%Y-%m-%d')
-                            df_p.at[idx_pago, "metodo"] = e_met
-                            df_p.at[idx_pago, "folio"] = e_fol
-                            df_p.at[idx_pago, "monto"] = e_mon
-                            df_p.at[idx_pago, "comentarios"] = e_com
-                            conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
-                            st.success("¡Cambios guardados!"); st.cache_data.clear(); st.rerun()
-                            
-                        if btn_c2.form_submit_button("🗑️ ELIMINAR"):
-                            df_p = df_p.drop(idx_pago)
-                            conn.update(spreadsheet=URL_SHEET, worksheet="pagos", data=df_p)
-                            st.error("Pago borrado."); st.cache_data.clear(); st.rerun()
+if menu == "💰 Cobranza":
+    df_ventas = cargar_datos("ventas")
+    df_pagos = cargar_datos("pagos")
+    render_cobranza(df_ventas, df_pagos, conn, URL_SHEET, fmt_moneda, cargar_datos)
 
 if menu == "💸 Gastos":
     df_gastos = cargar_datos("gastos")
@@ -587,4 +454,5 @@ if menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_clientes = cargar_datos("clientes")
     render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
+
 
