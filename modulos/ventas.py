@@ -142,31 +142,48 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                         st.success("¡Actualizado!"); st.cache_data.clear(); st.rerun()
 
     # ---------------------------------------------------------
-    # PESTAÑA 3: HISTORIAL (CON FORMATO MEJORADO)
+    # PESTAÑA 3: HISTORIAL (FORMATO PROFESIONAL)
     # ---------------------------------------------------------
     with tab_lista:
         if not df_v.empty:
-            # 1. Limpieza y preparación
-            cols_a_mostrar = [c for c in df_v.columns if c != 'id_venta']
-            df_historial = df_v[cols_a_mostrar].copy()
+            # 1. Filtramos y Renombramos columnas a "Nombre Propio"
+            # Creamos un diccionario de mapeo para los nombres
+            nuevos_nombres = {
+                "fecha": "Fecha",
+                "ubicacion": "Ubicación",
+                "cliente": "Cliente",
+                "vendedor": "Vendedor",
+                "precio_total": "Precio Total",
+                "enganche": "Enganche",
+                "plazo_meses": "Plazo (Meses)",
+                "mensualidad": "Mensualidad",
+                "comision": "Comisión",
+                "comentarios": "Comentarios",
+                "estatus_pago": "Estatus"
+            }
+            
+            # Seleccionamos columnas (sin id_venta) y renombramos
+            df_historial = df_v.drop(columns=["id_venta"], errors="ignore").rename(columns=nuevos_nombres)
 
-            # 2. Aseguramos que la columna fecha sea tratada como fecha
-            # (El formato '%d-%b-%Y' genera: 15-Feb-2026)
-            df_historial['fecha'] = pd.to_datetime(df_historial['fecha'])
+            # 2. Aseguramos formato de fecha
+            df_historial['Fecha'] = pd.to_datetime(df_historial['Fecha'])
 
-            # 3. Aplicamos el gran diccionario de formatos
-            df_historial_estilizado = df_historial.style.format({
-                "fecha": lambda t: t.strftime('%d-%b-%Y'),
-                "precio_total": "$ {:,.2f}",
-                "enganche": "$ {:,.2f}",
-                "mensualidad": "$ {:,.2f}",
-                "comision": "$ {:,.2f}",
-                "plazo_meses": "{:.0f}"
-            })
+            # 3. Aplicamos Estilos (Formatos + Centrado de encabezados)
+            df_final = df_historial.style.format({
+                "Fecha": lambda t: t.strftime('%d-%b-%Y'),
+                "Precio Total": "$ {:,.2f}",
+                "Enganche": "$ {:,.2f}",
+                "Mensualidad": "$ {:,.2f}",
+                "Comisión": "$ {:,.2f}",
+                "Plazo (Meses)": "{:,.0f}"
+            }).set_table_styles([
+                # Este bloque de CSS centra el texto de los encabezados (th)
+                {'selector': 'th', 'props': [('text-align', 'center'), ('background-color', '#f0f2f6')]}
+            ])
 
             # 4. Renderizamos
             st.dataframe(
-                df_historial_estilizado, 
+                df_final, 
                 use_container_width=True, 
                 hide_index=True
             )
