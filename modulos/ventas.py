@@ -141,5 +141,29 @@ def render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda):
                         conn.update(spreadsheet=URL_SHEET, worksheet="ventas", data=df_v)
                         st.success("¡Actualizado!"); st.cache_data.clear(); st.rerun()
 
+    # ---------------------------------------------------------
+    # PESTAÑA 3: HISTORIAL (CON FORMATO Y COLUMNA OCULTA)
+    # ---------------------------------------------------------
     with tab_lista:
-        st.dataframe(df_v, use_container_width=True, hide_index=True)
+        if not df_v.empty:
+            # 1. Ocultamos 'id_venta' seleccionando todas las demás columnas
+            # (Usamos loc para asegurar que no modifiquemos el original)
+            cols_a_mostrar = [c for c in df_v.columns if c != 'id_venta']
+            df_historial = df_v[cols_a_mostrar].copy()
+
+            # 2. Aplicamos formato de moneda con comas y 2 decimales
+            df_historial_estilizado = df_historial.style.format({
+                "precio_total": "$ {:,.2f}",
+                "enganche": "$ {:,.2f}",
+                "mensualidad": "$ {:,.2f}",
+                "comision": "$ {:,.2f}"
+            })
+
+            # 3. Renderizamos
+            st.dataframe(
+                df_historial_estilizado, 
+                use_container_width=True, 
+                hide_index=True
+            )
+        else:
+            st.info("No hay historial de ventas.")
