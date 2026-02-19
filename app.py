@@ -80,34 +80,32 @@ if menu == "🏠 Inicio":
     df_g = cargar_datos("gastos")
     render_inicio(df_v, df_p, df_g, fmt_moneda)
 
-if menu == "📝 Ventas":
+elif menu == "📝 Ventas":
     df_v = cargar_datos("ventas")
     df_u = cargar_datos("ubicaciones")
     df_cl = cargar_datos("clientes")
     df_vd = cargar_datos("vendedores")
     render_ventas(df_v, df_u, df_cl, df_vd, conn, URL_SHEET, fmt_moneda)
 
-if menu == "📊 Detalle de Crédito":
+elif menu == "📊 Detalle de Crédito":
     df_ventas = cargar_datos("ventas")
     df_pagos = cargar_datos("pagos")
     render_detalle_credito(df_ventas, df_pagos, fmt_moneda)
 
-if menu == "💰 Cobranza":
+elif menu == "💰 Cobranza":
     df_ventas = cargar_datos("ventas")
     df_pagos = cargar_datos("pagos")
     render_cobranza(df_ventas, df_pagos, conn, URL_SHEET, fmt_moneda, cargar_datos)
 
-if menu == "💸 Gastos":
+elif menu == "💸 Gastos":
     df_gastos = cargar_datos("gastos")
     render_gastos(df_gastos, conn, URL_SHEET, fmt_moneda, cargar_datos)
 
-if menu == "📍 Ubicaciones":
+elif menu == "📍 Ubicaciones":
     df_ubicaciones = cargar_datos("ubicaciones")
     render_ubicaciones(df_ubicaciones, conn, URL_SHEET, cargar_datos)
 
 elif menu == "👥 Clientes":
     df_clientes = cargar_datos("clientes")
     render_clientes(df_clientes, conn, URL_SHEET, cargar_datos)
-
-
 
