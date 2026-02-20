@@ -4,7 +4,8 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import urllib.parse
 
-def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
+# NOTA: Asegúrate de pasar df_u (ubicaciones) desde app.py al llamar esta función
+def render_inicio(df_v, df_p, df_g, df_cl, df_u, fmt_moneda):
     # --- FILA SUPERIOR ---
     col_tit, col_fec = st.columns([3, 1])
     with col_tit:
@@ -13,7 +14,8 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
         fecha_hoy = datetime.now().strftime('%d / %m / %Y')
         st.markdown(f"<p style='text-align: right; color: gray; padding-top: 25px;'><b>Fecha Actual:</b><br>{fecha_hoy}</p>", unsafe_allow_html=True)
 
-    # --- MÉTRICAS ---
+    # --- MÉTRICAS FINANCIERAS (FLUJO DE CAJA) ---
+    st.subheader("📊 Resumen de Flujo")
     c1, c2, c3 = st.columns(3)
     ingresos = (df_p["monto"].sum() if not df_p.empty else 0) + (df_v["enganche"].sum() if not df_v.empty else 0)
     egresos = df_g["monto"].sum() if not df_g.empty else 0
@@ -21,6 +23,28 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
     c1.metric("Ingresos Totales", fmt_moneda(ingresos))
     c2.metric("Gastos Totales", fmt_moneda(egresos), delta=f"-{fmt_moneda(egresos)}", delta_color="inverse")
     c3.metric("Utilidad Neta", fmt_moneda(ingresos - egresos))
+
+    # --- NUEVA SECCIÓN: KPIs DE INVENTARIO Y CRÉDITO ---
+    st.divider()
+    st.subheader("🏢 Estado del Proyecto e Inventario")
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+    # Cálculos de Inventario
+    total_lotes = len(df_u) if not df_u.empty else 0
+    lotes_vendidos = len(df_v) if not df_v.empty else 0
+    lotes_disponibles = total_lotes - lotes_vendidos
+    porcentaje_ventas = (lotes_vendidos / total_lotes * 100) if total_lotes > 0 else 0
+
+    # Cálculos de Cartera (Lo que falta por cobrar)
+    valor_total_ventas = df_v["precio_total"].sum() if not df_v.empty else 0
+    pagado_a_capital = ingresos # Enganches + Pagos
+    cartera_pendiente = valor_total_ventas - pagado_a_capital
+    porcentaje_liquidacion = (pagado_a_capital / valor_total_ventas * 100) if valor_total_ventas > 0 else 0
+
+    kpi1.metric("Lotes Vendidos", f"{lotes_vendidos} / {total_lotes}", f"{porcentaje_ventas:.1f}%")
+    kpi2.metric("Disponibles", lotes_disponibles)
+    kpi3.metric("Capital en Calle", fmt_moneda(cartera_pendiente), help="Monto total pendiente de cobro de todos los lotes vendidos.")
+    kpi4.metric("% Liquidación", f"{porcentaje_liquidacion:.1f}%", help="Porcentaje del valor total de ventas que ya ha sido cobrado.")
 
     st.divider()
     
@@ -31,13 +55,11 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
         hoy = datetime.now()
         
         for _, v in df_v.iterrows():
-            # 1. Obtener información de pagos
             pagos_esp = df_p[df_p['ubicacion'] == v['ubicacion']] if not df_p.empty else pd.DataFrame()
             total_pagado = pagos_esp['monto'].sum() if not pagos_esp.empty else 0
             
             # --- LÓGICA DE ÚLTIMO PAGO ---
             if not pagos_esp.empty:
-                # Ordenamos por fecha para obtener el más reciente
                 ultimo_registro = pagos_esp.sort_values('fecha', ascending=False).iloc[0]
                 fecha_pago = pd.to_datetime(ultimo_registro['fecha']).strftime('%d/%m/%Y')
                 monto_pago = fmt_moneda(ultimo_registro['monto'])
@@ -53,9 +75,7 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
             deuda_vencida = max(0.0, (m_transcurridos * mensualidad) - total_pagado)
             m_atraso = deuda_vencida / mensualidad if mensualidad > 0 else 0
             
-            link_wa = ""
-            link_mail = ""
-            dias_a = 0
+            link_wa = ""; link_mail = ""; dias_a = 0
 
             if deuda_vencida > 1.0:
                 estatus = "🔴 ATRASO"
@@ -68,8 +88,7 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
                     if not c_info.empty:
                         correo = str(c_info.iloc[0].get('correo', ''))
                         tel = str(c_info.iloc[0].get('telefono', '')).replace(" ", "").replace("-", "")
-                        msj = urllib.parse.quote(f"Hola {v['cliente']}, le contactamos de [Inmobiliaria] respecto a su lote en {v['ubicacion']}. Nos gustaría invitarle a la oficina para revisar su plan de pagos.")
-                        
+                        msj = urllib.parse.quote(f"Hola {v['cliente']}, le contactamos de Zona Valle respecto a su lote en {v['ubicacion']}. Nos gustaría invitarle a la oficina para revisar su plan de pagos.")
                         if tel: link_wa = f"https://wa.me/{tel}?text={msj}"
                         if correo: link_mail = f"mailto:{correo}?subject=Invitación Especial&body={msj}"
             else:
@@ -80,7 +99,7 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
                 "Ubicación": v['ubicacion'], 
                 "Cliente": v['cliente'], 
                 "Estatus": estatus, 
-                "Último Pago": txt_ultimo_pago, # Nueva columna solicitada
+                "Último Pago": txt_ultimo_pago,
                 "Días de Atraso": dias_a,
                 "Deuda Vencida": deuda_vencida,
                 "WhatsApp": link_wa,
@@ -89,16 +108,12 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
         
         df_mon = pd.DataFrame(monitor)
 
-        # --- FUNCIÓN DE ESTILO ---
         def destacar_atrasos(row):
             dias = row["Días de Atraso"]
-            if dias > 75:
-                return ['background-color: #FFB347; color: black'] * len(row) # Naranja
-            elif dias > 25:
-                return ['background-color: #FDFD96; color: black'] * len(row) # Amarillo
+            if dias > 75: return ['background-color: #FFB347; color: black'] * len(row)
+            elif dias > 25: return ['background-color: #FDFD96; color: black'] * len(row)
             return [''] * len(row)
 
-        # APLICAR ESTILOS
         df_estilizado = df_mon.style.apply(destacar_atrasos, axis=1).format({
             "Deuda Vencida": "$ {:,.2f}",
             "Días de Atraso": "{:,.0f} d"
