@@ -85,10 +85,10 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
             dias = row["Días de Atraso"]
             # Color Naranja para > 75 días
             if dias > 75:
-                return ['background-color: orange'; color: black'] * len(row)
+                return ['background-color: #FFA500; color: black'] * len(row)
             # Color Amarillo para > 25 días
             elif dias > 25:
-                return ['background-color: yellow'; color: black'] * len(row)
+                return ['background-color: #FFFF00; color: black'] * len(row)
             return [''] * len(row)
 
         # RENDERIZADO CON ESTILO Y LINKS
