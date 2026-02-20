@@ -13,14 +13,14 @@ from modulos.gastos import render_gastos
 from modulos.ubicaciones import render_ubicaciones
 from modulos.clientes import render_clientes
 
-# 1. CONFIGURACIÓN DE LA PÁGINA
+# --- CONFIGURACION DE LA PAGINA ---
 st.set_page_config(page_title="Zona Valle - Gestión Inmobiliaria", layout="wide")
 
-# 2. CONEXIÓN A GOOGLE SHEETS
+# --- CONEXION A GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/edit#gid=0"
 
-# --- FUNCIÓN PARA FORMATO DE MONEDA ($) ---
+# --- FUNCION PARA FORMATO DE MONEDA ($) ---
 def fmt_moneda(valor):
     try:
         return f"$ {float(valor):,.2f}"
@@ -36,9 +36,7 @@ def cargar_datos(pestana):
     except:
         return pd.DataFrame()
 
-# ==========================================
-# 🛠️ BARRA LATERAL (SIDEBAR)
-# ==========================================
+# === BARRA LATERAL (SIDEBAR) ===
 with st.sidebar:
     # --- LOGO CONCEPTUAL ---
     # Nota: Asegúrate de tener la imagen en la carpeta raíz o usar la URL directa
@@ -69,16 +67,12 @@ with st.sidebar:
     ahora = datetime.now().strftime("%H:%M:%S")
     st.sidebar.info(f"Última sincronización:\n{ahora}")
 
-# ==========================================
-# 🚀 RENDERIZADO DE MÓDULOS
-# ==========================================
-
+# === RENDERIZADO DE MODULOS ===
 if menu == "🏠 Inicio":
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
     df_g = cargar_datos("gastos")
-    df_cl = cargar_datos("clientes") # Cargamos clientes para las acciones de WA/Mail
-    # Ahora pasamos df_cl para evitar el NameError
+    df_cl = cargar_datos("clientes")
     render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda)
 
 elif menu == "📝 Ventas":
