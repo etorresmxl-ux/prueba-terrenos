@@ -25,7 +25,6 @@ def render_inicio(df_v, df_p, df_g, df_cl, df_u, fmt_moneda):
     c3.metric("Utilidad Neta", fmt_moneda(ingresos - egresos))
 
     # --- NUEVA SECCIÓN: KPIs DE INVENTARIO Y CRÉDITO ---
-    st.divider()
     st.subheader("🏢 Estado del Proyecto e Inventario")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
