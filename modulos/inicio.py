@@ -23,9 +23,6 @@ def render_inicio(df_v, df_p, df_g, df_cl, df_u, fmt_moneda):
     c1.metric("Ingresos Totales", fmt_moneda(ingresos))
     c2.metric("Gastos Totales", fmt_moneda(egresos), delta=f"-{fmt_moneda(egresos)}", delta_color="inverse")
     c3.metric("Utilidad Neta", fmt_moneda(ingresos - egresos))
-
-    # --- NUEVA SECCIÓN: KPIs DE INVENTARIO Y CRÉDITO ---
-    st.subheader("🏢 Estado del Proyecto e Inventario")
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
     # Cálculos de Inventario
