@@ -59,7 +59,7 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
                         correo = str(c_info.iloc[0].get('correo', ''))
                         tel = str(c_info.iloc[0].get('telefono', '')).replace(" ", "").replace("-", "")
                         
-                        msj = f"Hola {v['cliente']}, le contactamos de Zona Valle respecto a su lote en {v['ubicacion']}. Nos gustaría invitarle a la oficina para revisar su plan de pagos."
+                        msj = f"Hola {v['cliente']}, le contactamos de Inmobiliaria [Nombre] respecto a su lote en {v['ubicacion']}. Nos gustaría invitarle a la oficina para revisar su plan de pagos."
                         msj_enc = urllib.parse.quote(msj)
                         
                         if tel: link_wa = f"https://wa.me/{tel}?text={msj_enc}"
