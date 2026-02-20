@@ -68,7 +68,7 @@ def render_inicio(df_v, df_p, df_g, df_cl, fmt_moneda):
                     if not c_info.empty:
                         correo = str(c_info.iloc[0].get('correo', ''))
                         tel = str(c_info.iloc[0].get('telefono', '')).replace(" ", "").replace("-", "")
-                        msj = urllib.parse.quote(f"Hola {v['cliente']}, le contactamos de Zona Valle respecto a su lote en {v['ubicacion']}. Nos gustaría invitarle a la oficina para revisar su plan de pagos.")
+                        msj = urllib.parse.quote(f"Hola {v['cliente']}, le contactamos de [Inmobiliaria] respecto a su lote en {v['ubicacion']}. Nos gustaría invitarle a la oficina para revisar su plan de pagos.")
                         
                         if tel: link_wa = f"https://wa.me/{tel}?text={msj}"
                         if correo: link_mail = f"mailto:{correo}?subject=Invitación Especial&body={msj}"
