@@ -17,21 +17,20 @@ def render_inicio(df_v, df_p, df_g, df_cl, df_u, fmt_moneda):
     # --- MÉTRICAS FINANCIERAS (FLUJO DE CAJA) ---
     st.subheader("📊 Resumen de Flujo")
     c1, c2, c3 = st.columns(3)
+    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    
     ingresos = (df_p["monto"].sum() if not df_p.empty else 0) + (df_v["enganche"].sum() if not df_v.empty else 0)
     egresos = df_g["monto"].sum() if not df_g.empty else 0
     
     c1.metric("Ingresos Totales", fmt_moneda(ingresos))
     c2.metric("Gastos Totales", fmt_moneda(egresos), delta=f"-{fmt_moneda(egresos)}", delta_color="inverse")
     c3.metric("Utilidad Neta", fmt_moneda(ingresos - egresos))
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
 
-    # Cálculos de Inventario
     total_lotes = len(df_u) if not df_u.empty else 0
     lotes_vendidos = len(df_v) if not df_v.empty else 0
     lotes_disponibles = total_lotes - lotes_vendidos
     porcentaje_ventas = (lotes_vendidos / total_lotes * 100) if total_lotes > 0 else 0
 
-    # Cálculos de Cartera (Lo que falta por cobrar)
     valor_total_ventas = df_v["precio_total"].sum() if not df_v.empty else 0
     pagado_a_capital = ingresos # Enganches + Pagos
     cartera_pendiente = valor_total_ventas - pagado_a_capital
