@@ -9,7 +9,7 @@ def render_inicio(df_v, df_p, df_cl, fmt_moneda):
     col_tit, col_fec = st.columns([3, 1])
     with col_tit:
         st.title("🏠 Gestión de Cartera")
-        st.info("Módulo enfocado en el seguimiento de cobranza y atención a clientes.")
+
     with col_fec:
         fecha_hoy = datetime.now().strftime('%d / %m / %Y')
         st.markdown(f"<p style='text-align: right; color: gray; padding-top: 25px;'><b>Fecha Actual:</b><br>{fecha_hoy}</p>", unsafe_allow_html=True)
