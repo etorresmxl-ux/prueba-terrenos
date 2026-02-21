@@ -28,7 +28,7 @@ def fmt_moneda(valor):
         return "$ 0.00"
 
 # --- FUNCIONES DE APOYO ---
-@st.cache_data(ttl=600) # Caché de 10 min para no saturar la conexión
+@st.cache_data(ttl=600)
 def cargar_datos(pestana):
     try:
         df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
@@ -49,7 +49,7 @@ with st.sidebar:
         "Seleccione un módulo:",
         [
             "🏠 Inicio (Cartera)", 
-            "📈 Reportes Financieros", # Nuevo módulo independiente
+            "📈 Reportes Financieros",
             "📝 Ventas", 
             "📊 Detalle de Crédito", 
             "💰 Cobranza", 
@@ -113,5 +113,3 @@ elif menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_cl = cargar_datos("clientes")
     render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
-
-
