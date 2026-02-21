@@ -1,5 +1,1 @@
-streamlit
-streamlit-gsheets
-pandas
-plotly
-python-dateutil
+
