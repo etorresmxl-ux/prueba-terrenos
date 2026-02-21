@@ -2,10 +2,10 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
 
-# --- IMPORTACION DE MODULOS ---
+# --- IMPORTACIÓN DE MÓDULOS ---
 from modulos.inicio import render_inicio
+# from modulos.reportes import render_reportes  # Descomentar cuando crees el archivo
 from modulos.ventas import render_ventas
 from modulos.credito import render_detalle_credito
 from modulos.cobranza import render_cobranza
@@ -13,14 +13,14 @@ from modulos.gastos import render_gastos
 from modulos.ubicaciones import render_ubicaciones
 from modulos.clientes import render_clientes
 
-# --- CONFIGURACION DE LA PAGINA ---
+# --- CONFIGURACIÓN DE LA PÁGINA ---
 st.set_page_config(page_title="Zona Valle - Gestión Inmobiliaria", layout="wide")
 
-# --- CONEXION A GOOGLE SHEETS ---
+# --- CONEXIÓN A GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/edit#gid=0"
 
-# --- FUNCION PARA FORMATO DE MONEDA ($) ---
+# --- FUNCIÓN PARA FORMATO DE MONEDA ($) ---
 def fmt_moneda(valor):
     try:
         return f"$ {float(valor):,.2f}"
@@ -28,6 +28,7 @@ def fmt_moneda(valor):
         return "$ 0.00"
 
 # --- FUNCIONES DE APOYO ---
+@st.cache_data(ttl=600) # Caché de 10 min para no saturar la conexión
 def cargar_datos(pestana):
     try:
         df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
@@ -38,41 +39,51 @@ def cargar_datos(pestana):
 
 # === BARRA LATERAL (SIDEBAR) ===
 with st.sidebar:
-    # --- LOGO CONCEPTUAL ---
-    # Nota: Asegúrate de tener la imagen en la carpeta raíz o usar la URL directa
     try:
         st.image("logo.png", use_container_width=True)
     except:
-        st.title("🏢 Panel de Gestión")
+        st.title("🏢 Zona Valle")
     
-    # --- MENÚ DE NAVEGACIÓN ---
+    st.subheader("Navegación")
     menu = st.radio(
         "Seleccione un módulo:",
-        ["🏠 Inicio", "📝 Ventas", "📊 Detalle de Crédito", "💰 Cobranza", "💸 Gastos", "📍 Ubicaciones", "👥 Clientes"]
+        [
+            "🏠 Inicio (Cartera)", 
+            "📈 Reportes Financieros", # Nuevo módulo independiente
+            "📝 Ventas", 
+            "📊 Detalle de Crédito", 
+            "💰 Cobranza", 
+            "💸 Gastos", 
+            "📍 Ubicaciones", 
+            "👥 Clientes"
+        ]
     )
     
     st.divider()
 
-    # --- BOTÓN DE ACTUALIZACIÓN ---
-    st.subheader("🔄 Base de Datos")
-    if st.button("Actualizar Información"):
+    if st.button("🔄 Actualizar Información", use_container_width=True):
         st.cache_data.clear()
-        st.success("¡Datos actualizados!")
         st.rerun()
 
-    # --- INDICADOR DE CONEXIÓN ---
-    st.sidebar.markdown("---")
-    st.sidebar.write("### 🌐 Estado del Sistema")
-    st.sidebar.success("✅ Conectado a la Nube")
+    st.markdown("---")
+    st.write("### 🌐 Sistema")
+    st.success("✅ En línea")
     ahora = datetime.now().strftime("%H:%M:%S")
-    st.sidebar.info(f"Última sincronización:\n{ahora}")
+    st.info(f"Sincronizado: {ahora}")
 
-# === RENDERIZADO DE MODULOS ===
-if menu == "🏠 Inicio":
+# === RENDERIZADO DE MÓDULOS ===
+
+if menu == "🏠 Inicio (Cartera)":
+    # Solo cargamos lo necesario para cobranza
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
     df_cl = cargar_datos("clientes")
     render_inicio(df_v, df_p, df_cl, fmt_moneda)
+
+elif menu == "📈 Reportes Financieros":
+    st.title("📈 Reportes Financieros")
+    st.info("Módulo en construcción. Aquí verás KPIs globales, gráficas de ingresos vs gastos y utilidad.")
+    # Próximo paso: render_reportes(cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("gastos"), fmt_moneda)
 
 elif menu == "📝 Ventas":
     df_v = cargar_datos("ventas")
@@ -102,6 +113,3 @@ elif menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_cl = cargar_datos("clientes")
     render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
-
-
-
