@@ -74,7 +74,6 @@ with st.sidebar:
 # === RENDERIZADO DE MÓDULOS ===
 
 if menu == "🏠 Inicio (Cartera)":
-    # Solo cargamos lo necesario para cobranza
     df_v = cargar_datos("ventas")
     df_p = cargar_datos("pagos")
     df_cl = cargar_datos("clientes")
@@ -83,7 +82,6 @@ if menu == "🏠 Inicio (Cartera)":
 elif menu == "📈 Reportes Financieros":
     st.title("📈 Reportes Financieros")
     st.info("Módulo en construcción. Aquí verás KPIs globales, gráficas de ingresos vs gastos y utilidad.")
-    # Próximo paso: render_reportes(cargar_datos("ventas"), cargar_datos("pagos"), cargar_datos("gastos"), fmt_moneda)
 
 elif menu == "📝 Ventas":
     df_v = cargar_datos("ventas")
@@ -113,3 +111,4 @@ elif menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_cl = cargar_datos("clientes")
     render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
+
