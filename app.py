@@ -5,7 +5,7 @@ from datetime import datetime
 
 # --- IMPORTACIÓN DE MÓDULOS ---
 from modulos.inicio import render_inicio
-# from modulos.reportes import render_reportes  # Descomentar cuando crees el archivo
+from modulos.reportes import render_reportes
 from modulos.ventas import render_ventas
 from modulos.credito import render_detalle_credito
 from modulos.cobranza import render_cobranza
@@ -80,8 +80,10 @@ if menu == "🏠 Inicio (Cartera)":
     render_inicio(df_v, df_p, df_cl, fmt_moneda)
 
 elif menu == "📈 Reportes Financieros":
-    st.title("📈 Reportes Financieros")
-    st.info("Módulo en construcción. Aquí verás KPIs globales, gráficas de ingresos vs gastos y utilidad.")
+    df_v = cargar_datos("ventas")
+    df_p = cargar_datos("pagos")
+    df_g = cargar_datos("gastos")
+    render_reportes(df_v, df_p, df_g, fmt_moneda)
 
 elif menu == "📝 Ventas":
     df_v = cargar_datos("ventas")
@@ -111,4 +113,5 @@ elif menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_cl = cargar_datos("clientes")
     render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
+
 
