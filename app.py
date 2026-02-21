@@ -18,7 +18,7 @@ st.set_page_config(page_title="Zona Valle - Gestión Inmobiliaria", layout="wide
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 conn = st.connection("gsheets", type=GSheetsConnection)
-URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/edit#gid=0"
+URL_SHEET = "https://docs.google.com/spreadsheets/d/1d_G8VafPZp5jj3c1Io9kN3mG31GE70kK2Q2blxWzCCs/"
 
 # --- FUNCIÓN PARA FORMATO DE MONEDA ($) ---
 def fmt_moneda(valor):
@@ -113,3 +113,4 @@ elif menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_cl = cargar_datos("clientes")
     render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
+
