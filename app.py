@@ -28,13 +28,15 @@ def fmt_moneda(valor):
         return "$ 0.00"
 
 # --- FUNCIONES DE APOYO ---
-@st.cache_data(ttl=600)
 def cargar_datos(pestana):
     try:
+        # Esto nos dirá en la pantalla de la app qué está pasando
         df = conn.read(spreadsheet=URL_SHEET, worksheet=pestana)
-        df = df.dropna(axis=1, how='all').dropna(axis=0, how='all')
+        if df.empty:
+            st.sidebar.warning(f"La pestaña '{pestana}' está vacía o no existe.")
         return df
-    except:
+    except Exception as e:
+        st.sidebar.error(f"Error en {pestana}: {e}")
         return pd.DataFrame()
 
 # === BARRA LATERAL (SIDEBAR) ===
@@ -113,5 +115,6 @@ elif menu == "📍 Ubicaciones":
 elif menu == "👥 Clientes":
     df_cl = cargar_datos("clientes")
     render_clientes(df_cl, conn, URL_SHEET, cargar_datos)
+
 
 
